@@ -50,3 +50,4 @@
 - Verify live preview in actual composed pixels; eliminate recursive host resize request during accepted zoom and log actual grip negotiation.
 - Fix native corner QA to use real desktop mouse movement and button state; validate uninterrupted resize at multiple intermediate sizes.
 - Confirm full P008 green Windows workflow; extend native coverage for actual tooltip visibility and fresh attached restored editor geometry.
+- Replace unverified platform popup tooltips with scaled in-canvas contextual help; test visible composed pixels for two controls and disabled state.

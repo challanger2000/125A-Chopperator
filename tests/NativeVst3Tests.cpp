@@ -14,7 +14,6 @@
 #include "pluginterfaces/gui/iplugview.h"
 #define NOMINMAX
 #include <windows.h>
-#include <commctrl.h>
 #include <objbase.h>
 #include <cstdint>
 #include <algorithm>
@@ -519,50 +518,59 @@ void previewContract(Native& n,HWND child){
 
 // VSTGUI's pinned Win32 backend exposes real tooltip common controls.
 // Inspect only the live window for the requested tool on this UI thread.
-struct TooltipProbe {
-    HWND child;
-    std::wstring text;
-    bool visible=false;
-};
-BOOL CALLBACK collectTooltip(HWND window,LPARAM arg){
-    auto& probe=*reinterpret_cast<TooltipProbe*>(arg);
-    wchar_t cls[64]{};
-    if(!GetClassNameW(window,cls,64)||_wcsicmp(cls,TOOLTIPS_CLASSW)!=0||!IsWindowVisible(window))return TRUE;
-    wchar_t buf[512]{};
-    TTTOOLINFOW info{};info.cbSize=sizeof(info);info.hwnd=probe.child;info.uId=0;info.lpszText=buf;
-    SendMessageW(window,TTM_GETTEXTW,512,reinterpret_cast<LPARAM>(&info));
-    if(buf[0]){probe.visible=true;probe.text=buf;return FALSE;}
-    return TRUE;
-}
-TooltipProbe tooltipProbe(HWND child){
-    TooltipProbe p{child};EnumThreadWindows(GetCurrentThreadId(),collectTooltip,reinterpret_cast<LPARAM>(&p));return p;
+// Capture the actual composed desktop, not the stale child-window DC.
+// A shown help panel has the dedicated background color and rendered text.
+// Check two distinct contextual panels, the disabled state and disappearance.
+struct HelpPixels{int background=0,ink=0;std::uint64_t signature=1469598103934665603ull;};
+HelpPixels helpPixels(HWND child,int x,int y){
+    if(HMODULE dwm=LoadLibraryW(L"dwmapi.dll")){
+        using Flush=HRESULT(WINAPI*)();
+        if(auto flush=reinterpret_cast<Flush>(GetProcAddress(dwm,"DwmFlush")))flush();
+        FreeLibrary(dwm);
+    }
+    constexpr int w=516,h=28;
+    POINT p{x+2,y+2};require(ClientToScreen(child,&p)!=0,"help capture coordinates");
+    HDC screen=GetDC(nullptr),dc=CreateCompatibleDC(screen);
+    BITMAPINFO bi{};bi.bmiHeader.biSize=sizeof(BITMAPINFOHEADER);bi.bmiHeader.biWidth=w;bi.bmiHeader.biHeight=-h;
+    bi.bmiHeader.biPlanes=1;bi.bmiHeader.biBitCount=32;bi.bmiHeader.biCompression=BI_RGB;
+    void* pixels=nullptr;HBITMAP bitmap=CreateDIBSection(dc,&bi,DIB_RGB_COLORS,&pixels,nullptr,0);
+    require(screen&&dc&&bitmap&&pixels,"help desktop bitmap");
+    auto prev=SelectObject(dc,bitmap);
+    require(BitBlt(dc,0,0,w,h,screen,p.x,p.y,SRCCOPY|CAPTUREBLT)!=0,"help desktop capture");GdiFlush();
+    HelpPixels result;const auto* data=static_cast<const std::uint32_t*>(pixels);
+    for(int k=0;k<w*h;++k){
+        const auto value=data[k]&0xffffffu;
+        result.background+=value==0x101b27u;
+        const int r=(value>>16)&255,g=(value>>8)&255,b=value&255;
+        if(r>150&&g>150&&b>150){++result.ink;result.signature^=static_cast<std::uint64_t>(k);result.signature*=1099511628211ull;}
+    }
+    SelectObject(dc,prev);DeleteObject(bitmap);DeleteDC(dc);ReleaseDC(nullptr,screen);return result;
 }
 void helpContract(HWND host,HWND child){
     SetWindowPos(host,HWND_TOPMOST,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE);
     SetForegroundWindow(host);pumpGui(100);
     POINT old{};require(GetCursorPos(&old)!=0,"help save cursor");
-    const auto hover=[&](int x,int y,int delay){
-        POINT p{x,y};require(ClientToScreen(child,&p)!=0&&SetCursorPos(p.x,p.y)!=0,"help hover real cursor");
-        pumpGui(delay);
+    const auto hover=[&](int x,int y){
+        POINT p{x,y};require(ClientToScreen(child,&p)!=0&&SetCursorPos(p.x,p.y)!=0,"help hover real cursor");pumpGui(200);
     };
     const auto click=[&](){
         INPUT press[2]{};press[0].type=press[1].type=INPUT_MOUSE;press[0].mi.dwFlags=MOUSEEVENTF_LEFTDOWN;press[1].mi.dwFlags=MOUSEEVENTF_LEFTUP;
         require(SendInput(2,press,sizeof(INPUT))==2,"help real mouse click");pumpGui(100);
     };
-    // Default OFF, then actual ? click, two different contextual tooltips,
-    // and OFF again. Neither state is inferred from the serialized flag.
-    hover(24,60,100);hover(138,314,1250);
-    require(!tooltipProbe(child).visible,"help default off hides mouseover");
-    hover(508,32,100);click();
-    hover(138,314,1250);
-    auto first=tooltipProbe(child);
-    require(first.visible&&first.text.find(L"START: initial rhythmic note division.")!=std::wstring::npos,"START visible contextual tooltip");
-    hover(24,60,350);hover(404,468,1250);
-    auto second=tooltipProbe(child);
-    require(second.visible&&second.text.find(L"WIDTH: open fraction")!=std::wstring::npos,"WIDTH visible contextual tooltip");
-    hover(508,32,100);click();
-    hover(138,314,1250);
-    require(!tooltipProbe(child).visible,"help disabled hides mouseover");
+    hover(24,60);hover(138,314);
+    require(helpPixels(child,12,212).background<50,"help default off hides mouseover");
+    hover(508,32);click();
+    hover(138,314);
+    const auto first=helpPixels(child,12,212);
+    std::cout<<"HELP_START_PIXELS background="<<first.background<<" ink="<<first.ink<<"\n";
+    require(first.background>10000&&first.ink>40,"START visible contextual tooltip");
+    hover(24,60);require(helpPixels(child,12,212).background<50,"tooltip vanishes on leave");
+    hover(404,468);
+    const auto second=helpPixels(child,144,398);
+    std::cout<<"HELP_WIDTH_PIXELS background="<<second.background<<" ink="<<second.ink<<"\n";
+    require(second.background>10000&&second.ink>40&&second.signature!=first.signature,"WIDTH distinct visible contextual tooltip");
+    hover(508,32);click();
+    hover(138,314);require(helpPixels(child,12,212).background<50,"help disabled hides mouseover");
     SetCursorPos(old.x,old.y);pumpGui(80);
     std::cout<<"NATIVE_HELP_MOUSEOVER_ON_OFF_PASS\n";
 }

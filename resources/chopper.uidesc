@@ -68,4 +68,5 @@
 <view class="CTextLabel" custom-view-name="PercentReadout" origin="788, 500" size="144, 18" title="" font="Label" font-color="Text" text-alignment="center" transparent="true" mouse-enabled="false" control-tag="P110"/>
 <view class="CSegmentButton" origin="24, 528" size="912, 36" control-tag="P106" segment-names="RECT,SAW UP,SAW DOWN,TRIANGLE,SINE" selection-mode="Single" style="horizontal" font="Label" text-color="Text" text-color-highlighted="Amber" frame-color="Frame" frame-width="1" round-radius="6" gradient="Button" gradient-highlighted="Selected"/>
 <view class="CView" custom-view-name="ResizeGrip" origin="940, 556" size="20, 20" mouse-enabled="true"/>
+<view class="CView" custom-view-name="HelpOverlay" origin="0, 0" size="960, 576" transparent="true" mouse-enabled="false"/>
 </template></vstgui-ui-description>

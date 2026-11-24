@@ -216,10 +216,58 @@ private:
     bool dragging=false;
 };
 
+
+// Draw contextual help inside the scaled plugin canvas, not in a separate
+// Win32 tooltip HWND whose stacking/focus is controlled by the DAW.
+// The overlay never participates in mouse hit testing.
+class HelpOverlay final:public VSTGUI::CView{
+public:
+    HelpOverlay():CView(VSTGUI::CRect(0,0,960,576)){setMouseEnabled(false);setTransparency(true);}
+    void show(int tag,const VSTGUI::CRect& target){
+        static constexpr const char* tips[]{
+            "START: initial rhythmic note division.",
+            "MID: note division at the middle point.",
+            "END: final rhythmic note division.",
+            "LENGTH: duration of the pattern in bars.",
+            "MID POSITION: location of MID within the pattern.",
+            "CURVE: shape of the rate transition. 0% is linear.",
+            "SHAPE: waveform of each rhythmic impulse.",
+            "WIDTH: open fraction of each impulse. 50% = half open.",
+            "ATTACK: fade-in time relative to the impulse period.",
+            "RELEASE: fade-out time relative to the impulse period.",
+            "MIX: dry/wet balance. 0% is dry.",
+            "ACTIVE: starts the pattern on an OFF to ON transition.",
+            "MODE: play once or repeat continuously."
+        };
+        if(tag<100||tag>112){hide();return;}
+        const double x=std::clamp((target.left+target.right)*.5-260.,12.,428.);
+        const double y=target.top<80?target.bottom+6:target.top-38;
+        box=VSTGUI::CRect(x,y,x+520,y+32);
+        tip=tips[tag-100];invalidatePanel();
+    }
+    void hide(){if(tip){tip=nullptr;invalidatePanel();}}
+    void draw(VSTGUI::CDrawContext* c) override{
+        using namespace VSTGUI;
+        if(tip){
+            c->setFillColor(CColor(16,27,39,255));
+            c->setFrameColor(CColor(243,172,101,255));
+            c->setLineWidth(1);c->drawRect(box,kDrawFilledAndStroked);
+            auto text=box;text.inset(10,2);
+            c->setFont(kNormalFont);c->setFontColor(CColor(226,227,228,255));
+            c->drawString(tip,text,kLeftText);
+        }
+        setDirty(false);
+    }
+private:
+    void invalidatePanel(){if(auto* p=getParentView())p->invalid();}
+    const char* tip=nullptr;
+    VSTGUI::CRect box{};
+};
+
 class Editor final:public VSTGUI::AspectRatioVST3Editor{
 public:
     explicit Editor(Steinberg::Vst::EditController* c,EditorPreferences& p):AspectRatioVST3Editor(c,"view","chopper.uidesc"),preferences(p){
-        setMinZoomFactor(.75);enableTooltips(p.help);
+        setMinZoomFactor(.75);enableTooltips(false);
         setZoomFactor(p.zoom);
         rect.right=static_cast<Steinberg::int32>(std::lround(960*p.zoom));
         rect.bottom=static_cast<Steinberg::int32>(std::floor(rect.right*.6));
@@ -236,26 +284,26 @@ protected:
             knob->setZoomFactor(5.f);
             knob->setWantsFocus(true);
         }
-        if(auto* control=dynamic_cast<VSTGUI::CControl*>(result)){
-            static constexpr const char* tips[]{
-                "START: initial rhythmic note division.",
-                "MID: note division at the middle point.",
-                "END: final rhythmic note division.",
-                "LENGTH: duration of the pattern in bars.",
-                "MID POSITION: location of the middle division within the pattern.",
-                "CURVE: shape of the rate transition. 0% is linear.",
-                "SHAPE: waveform of each rhythmic impulse.",
-                "WIDTH: open fraction of each impulse. 50% means equal open and closed time.",
-                "ATTACK: fade-in time relative to the impulse period.",
-                "RELEASE: fade-out time relative to the impulse period.",
-                "MIX: dry/wet balance. 0% is dry.",
-                "ACTIVE: starts the pattern on an OFF to ON transition.",
-                "MODE: play once or repeat continuously."
-            };
-            const auto tag=control->getTag();
-            if(tag>=100&&tag<=112)control->setTooltipText(tips[tag-100]);
-        }
         return result;
+    }
+    void onMouseEntered(VSTGUI::CView* view,VSTGUI::CFrame*) override{
+        if(!preferences.help||!helpOverlay)return;
+        if(auto* control=dynamic_cast<VSTGUI::CControl*>(view)){
+            const auto tag=control->getTag();
+            if(tag>=100&&tag<=112){hovered=view;helpOverlay->show(tag,view->getViewSize());}
+        }
+    }
+    void onMouseExited(VSTGUI::CView* view,VSTGUI::CFrame*) override{
+        if(view==hovered){hovered=nullptr;if(helpOverlay)helpOverlay->hide();}
+    }
+    void onMouseEvent(VSTGUI::MouseEvent& event,VSTGUI::CFrame* frame) override{
+        if(event.type==VSTGUI::EventType::MouseDown&&helpOverlay)helpOverlay->hide();
+        AspectRatioVST3Editor::onMouseEvent(event,frame);
+    }
+    void onViewRemoved(VSTGUI::CFrame* frame,VSTGUI::CView* view) override{
+        if(view==hovered){hovered=nullptr;if(helpOverlay)helpOverlay->hide();}
+        if(view==helpOverlay)helpOverlay=nullptr;
+        AspectRatioVST3Editor::onViewRemoved(frame,view);
     }
     bool PLUGIN_API open(void* parent,const VSTGUI::PlatformType& type) override{
         // Fail explicitly rather than presenting a blank or low-resolution editor.
@@ -273,7 +321,7 @@ protected:
         const bool ok=AspectRatioVST3Editor::open(parent,type);
         opened=ok;return ok;
     }
-    void PLUGIN_API close() override{opened=false;AspectRatioVST3Editor::close();}
+    void PLUGIN_API close() override{opened=false;hovered=nullptr;helpOverlay=nullptr;AspectRatioVST3Editor::close();}
     bool beforeSizeChange(const VSTGUI::CRect& newSize,const VSTGUI::CRect& oldSize) override{
         // The host already accepted this size via onSize. Do not ask it
         // again while applying its acknowledgement to the native frame.
@@ -305,7 +353,10 @@ protected:
     }
     VSTGUI::CView* createView(const VSTGUI::UIAttributes& attrs,const VSTGUI::IUIDescription* desc) override{
         const auto* name=attrs.getAttributeValue("custom-view-name");
-        if(name&&*name=="HelpButton")return new HelpButton(preferences.help,[this](bool enabled){preferences.help=enabled;enableTooltips(enabled);});
+        if(name&&*name=="HelpButton")return new HelpButton(preferences.help,[this](bool enabled){
+            preferences.help=enabled;if(helpOverlay)helpOverlay->hide();hovered=nullptr;
+        });
+        if(name&&*name=="HelpOverlay"){helpOverlay=new HelpOverlay();return helpOverlay;}
         if(name&&*name=="ResizeGrip")return new ResizeGrip([this]{return getZoomFactor()*getContentScaleFactor();},[this](double width){
             Steinberg::ViewRect r{0,0,static_cast<Steinberg::int32>(std::lround(std::clamp(width,720*getContentScaleFactor(),1440*getContentScaleFactor()))),0};
             r.bottom=static_cast<Steinberg::int32>(std::floor(r.right*.6));
@@ -320,6 +371,8 @@ protected:
     }
 private:
     EditorPreferences& preferences;
+    HelpOverlay* helpOverlay=nullptr;
+    VSTGUI::CView* hovered=nullptr;
     bool opened=false,resizing=false;
 };
 }
