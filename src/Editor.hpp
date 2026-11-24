@@ -44,69 +44,70 @@ public:
     void draw(VSTGUI::CDrawContext* c) override {
         using namespace VSTGUI;
         const auto r=getViewSize();
-        c->setFillColor(CColor(16,19,21,255));c->drawRect(r,kDrawFilled);
-        c->setFrameColor(CColor(43,48,52,255));c->setLineWidth(1);
-        const double l=r.left+20,rr=r.right-20,top=r.top+38,bottom=r.bottom-20;
-        for(int i=0;i<3;++i){double y=top+(bottom-top)*i/2;c->drawLine({l,y},{rr,y});}
-        c->drawLine({l,top},{l,bottom});c->drawLine({rr,top},{rr,bottom});
-        double mid=l+(rr-l)*position;
-        c->drawLine({mid,top},{mid,bottom});
-        c->setFont(kNormalFontSmall);
-        c->setFontColor(CColor(180,184,188,255));
-        c->drawString("START",CPoint(l, r.top+18));
-        c->drawString("MID",CPoint(mid-10,r.top+18));
-        c->drawString("END",CPoint(rr-22,r.top+18));
-        c->drawString("GATE PREVIEW  120 BPM / 4/4",CRect(l,r.bottom-17,rr,r.bottom-2),kCenterText);
-        // Filled rhythmic impulses, not an isolated trace or a rate curve.
-        // Average per column preserves duty cycle at high pulse density;
-        // min/max marks retain the envelope excursions when compressed.
-        const double dx=(rr-l)/double(mean.size());
-        c->setFillColor(CColor(195,104,38,255));
-        for(std::size_t i=0;i<mean.size();++i){
-            const double x=l+dx*double(i);
-            const double y=bottom-(bottom-top)*mean[i];
-            if(y<bottom)c->drawRect(CRect(x,y,x+dx,bottom),kDrawFilled);
+        // Owner's Unbenannt.svg: viewBox 340 x 110. This is a timing
+        // diagram, not an audio oscilloscope or gain-envelope plot.
+        const auto x=[&](double v){return r.left+r.getWidth()*v/340;};
+        const auto y=[&](double v){return r.top+r.getHeight()*v/110;};
+        c->setFillColor(CColor(16,17,19,255));c->drawRect(r,kDrawFilled);
+        c->setFrameColor(CColor(69,69,69,255));c->setLineWidth(1);
+        c->drawRect(CRect(x(1),y(1),x(339),y(109)),kDrawStroked);
+        c->setFrameColor(CColor(52,52,52,255));
+        for(int i=0;i<=4;++i){
+            const double xx=x(10+80*i);
+            for(int v=8;v<100;v+=6)c->drawLine({xx,y(v)},{xx,y(std::min(100,v+3))});
         }
-        c->setFrameColor(CColor(245,156,73,255));c->setLineWidth(1);
-        for(std::size_t i=0;i<high.size();++i){
-            const double x=l+dx*(double(i)+.5);
-            const double hi=bottom-(bottom-top)*high[i];
-            const double lo=bottom-(bottom-top)*low[i];
-            if(hi<lo)c->drawLine({x,hi},{x,lo});
-            if(high[i]>0)c->drawLine({x-dx*.5,hi},{x+dx*.5,hi});
+        c->setFillColor(CColor(232,155,64,255));
+        for(std::size_t i=0;i<count;++i){
+            const double left=x(10+320*starts[i]),right=x(10+320*ends[i]);
+            if(right>left)c->drawRect(CRect(left,y(16),right,y(69)),kDrawFilled);
         }
+        c->setFont(kNormalFontSmall);c->setFontColor(CColor(170,170,170,255));
+        c->drawString("START",CRect(x(10),y(78),x(70),y(98)),kLeftText);
+        c->drawString("MID",CRect(x(10+320*position-28),y(78),x(10+320*position+28),y(98)),kCenterText);
+        c->drawString("END",CRect(x(270),y(78),x(330),y(98)),kRightText);
         setDirty(false);
     }
 private:
     void refresh(){
-        Parameters p;std::array<double,11> now{};
-        for(std::size_t i=0;i<now.size();++i){
-            now[i]=controller->getParamNormalized(static_cast<Steinberg::Vst::ParamID>(100+i));
-            p.set(static_cast<Param>(100+i),now[i]);
+        Parameters p;
+        constexpr std::array<Param,7> ids{Param::start,Param::mid,Param::end,Param::length,Param::position,Param::curve,Param::width};
+        std::array<double,ids.size()> now{};
+        for(std::size_t i=0;i<ids.size();++i){
+            now[i]=controller->getParamNormalized(static_cast<Steinberg::Vst::ParamID>(ids[i]));
+            p.set(ids[i],now[i]);
         }
         if(initialized&&now==previous)return;
         previous=now;initialized=true;
         const auto s=p.settings();position=s.position;
-        // A deliberately low-rate, fixed reference clock for visual preview only.
-        // Use the actual DSP core (including attack/release and mix).
-        constexpr double sr=2000;
-        Core core;core.prepare(sr);core.configure(s);core.setClock(120,4,4);core.setActive(true);
-        const auto count=static_cast<int>(s.bars*2*sr);
-        low.fill(1);high.fill(0);mean.fill(0);
-        std::array<unsigned,872> counts{};
-        for(int i=0;i<count;++i){
-            const auto j=std::min(low.size()-1,static_cast<std::size_t>(i)*low.size()/static_cast<std::size_t>(count));
-            const double g=core.tick();low[j]=std::min(low[j],g);high[j]=std::max(high[j],g);mean[j]+=g;++counts[j];
-        }
-        for(std::size_t i=0;i<low.size();++i){
-            if(counts[i])mean[i]/=counts[i];
-            else low[i]=high[i]=mean[i]=i?mean[i-1]:1;
+        // In 4/4 one bar contains one whole note. Invert the same
+        // integrated phase law used by Core for each gate edge.
+        // No sample-drop or fictitious gaps; WIDTH defines the open fraction
+        // in phase units, not an approximate screen-space percentage.
+        const double total=s.bars*integral(s,1);
+        const auto inverse=[&](double phase){
+            if(phase<=0)return 0.;
+            if(phase>=total)return 1.;
+            double lo=0,hi=1;
+            for(int k=0;k<28;++k){
+                const double mid=(lo+hi)*.5;
+                if(s.bars*integral(s,mid)<phase)lo=mid;else hi=mid;
+            }
+            return (lo+hi)*.5;
+        };
+        count=0;
+        if(s.width>0){
+            for(std::size_t cycle=0;cycle<starts.size()&&double(cycle)<total;++cycle){
+                starts[count]=inverse(double(cycle));
+                ends[count]=inverse(double(cycle)+s.width);
+                ++count;
+            }
         }
         invalid();
     }
     Steinberg::Vst::EditController* controller;
-    std::array<double,11> previous{};
-    std::array<double,872> low{},high{},mean{};
+    std::array<double,7> previous{};
+    std::array<double,4096> starts{},ends{};
+    std::size_t count=0;
     double position=.5;
     bool initialized=false;
 };

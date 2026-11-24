@@ -489,9 +489,9 @@ void guiContract(const VST3::Hosting::Module::Ptr& module,const std::filesystem:
         ViewRect original{0,0,960,576};require(view->checkSizeConstraint(&original)==kResultOk&&frame->resizeView(view.get(),&original)==kResultOk,"resize restore");pumpGui(100);
         require(view->getSize(&size)==kResultOk&&size.getWidth()==960&&size.getHeight()==576,"restored geometry");
         require(GetClientRect(child,&childRect)!=0&&childRect.right==960&&childRect.bottom==576,"restored child geometry");
-        // Capture the actual agreed default slow-fast-slow RECT trajectory,
+        // Capture the owner reference fast-slow-fast RECT trajectory,
         // not the unrelated short SINE settings left behind by earlier QA.
-        const std::array<double,13> previewDefaults{1./6,4./6,1./6,3./65,.5,.5,0,.5,.02,.05,1,0,0};
+        const std::array<double,13> previewDefaults{4./6,1./6,4./6,5./65,.5,.5,0,.5,.02,.05,1,0,0};
         for(std::size_t i=0;i<previewDefaults.size();++i)
             require(n.controller->setParamNormalized(static_cast<ParamID>(100+i),previewDefaults[i])==kResultOk,"default preview state");
         pumpGui(180);
