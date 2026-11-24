@@ -20,3 +20,4 @@
 ## P005 / 0.5.0
 - Add actual-module coherent AM spectrum, folded rectangular sideband, all five shapes, and paced native dense automation measurements.
 - No DSP algorithm change. Verify spectral oracle with a deliberately wrong expected carrier.
+- P005 CI correction: consume intentional negative-control exit only after verifying both exit code and diagnostic; preserve failed-run evidence. No plugin source change.

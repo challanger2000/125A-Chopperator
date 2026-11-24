@@ -37,6 +37,10 @@ jobs:
           $negativeExit = $LASTEXITCODE
           $negative | Write-Host
           if ($negativeExit -ne 1 -or ($negative -join ' ') -notmatch 'FAIL SINE carrier oracle') { throw "Spectral negative control did not detect wrong expected carrier" }
+          Write-Host "SPECTRAL_NEGATIVE_CONTROL_PASS"
+          # GitHub pwsh appends an exit using LASTEXITCODE; the intentional failure
+          # above is consumed only after its exit code and diagnostic are verified.
+          exit 0
       - uses: actions/upload-artifact@v4
         with:
           name: 125A-Chopperator-P005-Windows-x64-development
