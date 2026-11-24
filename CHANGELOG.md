@@ -53,3 +53,4 @@
 - Replace unverified platform popup tooltips with scaled in-canvas contextual help; test visible composed pixels for two controls and disabled state.
 - Verify all P008 GUI requirements in native Windows; extend QA with actual GUI-to-host-to-processor PCM and fresh state recall across all thirteen controls.
 - P008 verified all thirteen native GUI-to-audio paths and exact fresh state PCM recall; supply unchanged, hash-verified Windows x64 VST3 candidate for owner practical acceptance.
+- Add double-click value entry for all ten knob readouts using SDK-native text edits; strict note/bar/percent parsing and cancellation.

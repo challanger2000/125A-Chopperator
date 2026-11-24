@@ -12,7 +12,8 @@
 #include <cstdlib>
 #include <functional>
 #include "vstgui/lib/controls/cknob.h"
-#include "vstgui/lib/controls/ctextlabel.h"
+#include "vstgui/lib/controls/ctextedit.h"
+#include "ValueEntry.hpp"
 #include <charconv>
 #include <string>
 #include "vstgui/uidescription/uiattributes.h"
@@ -28,32 +29,58 @@ struct EditorPreferences {
     void notify(){for(auto& w:watches)w.update();}
     void remove(const void* owner){std::erase_if(watches,[owner](const auto& w){return w.owner==owner;});}
 };
-// Format only the on-panel readout. Preserve SDK parameter precision,
-// automation, state serialization and the DSP mapping without changes.
-class PercentLabel final:public VSTGUI::CTextLabel{
+// SDK-native CTextEdit opens its platform field only on double click.
+// Keep the raw user entry intact through the SDK's valueChanged callback;
+// compact formatting applies to canonical controller feedback only.
+class ValueReadout final:public VSTGUI::CTextEdit{
 public:
-    PercentLabel():CTextLabel(VSTGUI::CRect(0,0,1,1)){}
+    explicit ValueReadout(Steinberg::Vst::EditController* c):CTextEdit(VSTGUI::CRect(0,0,1,1),nullptr,-1,nullptr,nullptr,kDoubleClickStyle),controller(c){
+        setImmediateTextChange(false);
+    }
     void setText(const VSTGUI::UTF8String& txt) override{
+        if(rawNext){rawNext=false;CTextEdit::setText(txt);return;}
+        if(getTag()<104){CTextEdit::setText(txt);return;}
         auto text=txt.getString();
         for(auto& c:text)if(c==',')c='.';
-        const auto first=text.find_first_not_of(" \t");
-        if(first!=std::string::npos)text.erase(0,first);
-        const auto last=text.find_last_not_of(" %\t");
-        if(last!=std::string::npos)text.resize(last+1);
+        auto s=trimEntry(text);if(s.ends_with("%"))s.remove_suffix(1);
         double value=0;
-        const auto parsed=std::from_chars(text.data(),text.data()+text.size(),value);
-        if(parsed.ec!=std::errc{}||parsed.ptr!=text.data()+text.size()||!std::isfinite(value)){
-            CTextLabel::setText(txt);return;
-        }
+        if(!entryNumber(s,value)){CTextEdit::setText(txt);return;}
         if(std::abs(value)<.05)value=0;
         char buffer[32]{};
-        const auto formatted=std::to_chars(buffer,buffer+sizeof(buffer),value,std::chars_format::fixed,1);
-        if(formatted.ec!=std::errc{}){CTextLabel::setText(txt);return;}
-        std::string display(buffer,formatted.ptr);
-        if(display.size()>=2&&display.substr(display.size()-2)==".0")display.resize(display.size()-2);
-        display+="%";
-        CTextLabel::setText(VSTGUI::UTF8String(display));
+        const auto result=std::to_chars(buffer,buffer+sizeof(buffer),value,std::chars_format::fixed,1);
+        if(result.ec!=std::errc{}){CTextEdit::setText(txt);return;}
+        std::string display(buffer,result.ptr);
+        if(display.ends_with(".0"))display.resize(display.size()-2);
+        CTextEdit::setText(VSTGUI::UTF8String(display+"%"));
     }
+    void looseFocus() override{
+        auto field=getPlatformTextEdit();
+        if(!field)return;
+        double value=0;
+        const auto input=field->getText();
+        // Invalid input or Escape never emits an edit or changes the sound.
+        if(!parseEntry(static_cast<Param>(getTag()),input.getString(),value))
+            field->setText(getText());
+        rawNext=field->getText()!=getText();
+        CTextEdit::looseFocus();
+        rawNext=false;
+        Steinberg::Vst::String128 canonical{};
+        const auto id=static_cast<Steinberg::Vst::ParamID>(getTag());
+        if(controller->getParamStringByValue(id,controller->getParamNormalized(id),canonical)==Steinberg::kResultOk){
+            std::string ascii;
+            for(auto c:canonical){if(!c)break;if(c>127)return;ascii+=static_cast<char>(c);}
+            setText(VSTGUI::UTF8String(ascii));invalid();
+        }
+    }
+protected:
+    void platformOnKeyboardEvent(VSTGUI::KeyboardEvent& event) override{
+        if(event.type==VSTGUI::EventType::KeyDown&&event.virt==VSTGUI::VirtualKey::Escape)
+            if(auto field=getPlatformTextEdit())field->setText(getText());
+        CTextEdit::platformOnKeyboardEvent(event);
+    }
+private:
+    Steinberg::Vst::EditController* controller;
+    bool rawNext=false;
 };
 class Preview final:public VSTGUI::CView {
     static constexpr std::array<Param,7> ids{Param::start,Param::mid,Param::end,Param::length,Param::position,Param::curve,Param::width};
@@ -365,7 +392,7 @@ protected:
                 if(std::getenv("CHOPPER_GUI_TRACE"))std::fprintf(stderr,"GRIP_REQUEST %d x %d accepted=%d\n",r.getWidth(),r.getHeight(),int(accepted));
             }
         });
-        if(name&&*name=="PercentReadout")return new PercentLabel();
+        if(name&&*name=="ValueReadout")return new ValueReadout(getController());
         if(name&&*name=="ChopperPreview")return new Preview(VSTGUI::CRect(24,72,936,210),getController(),preferences);
         return AspectRatioVST3Editor::createView(attrs,desc);
     }

@@ -57,3 +57,5 @@ Exact 3b5877be6f0ee0dc35aed518ff25981cced33e5d: 4/4 CTests, 47/47 validator, ind
 
 ## P008 candidate 45427106965 (473bbbca236e3cb8d8a51e4c7dbcbf8b8136f8a4)
 Complete workflow PASS; all thirteen actual native GUI-to-processor control paths, balanced host edits, no cross-parameter edits, expected gesture values, explicit automation PCM parity, meaningful change against unchanged baseline, and fresh controller/component recall PCM PASS. Existing independent DSP/GUI/validator/tester/programme gates PASS. Exact downloaded candidate ZIP SHA256 25a2ad07ef67b6c2376f803569e6392a81f2d2a4f06241c684a72a98b432c14a verified, ZIP CRC and complete bundle checked. Owner practical Studio Pro acceptance now next; no public FINAL release claim. Full audit and untested DPI/host-specific outcomes remain open.
+
+Owner double-click entry requirement: SDK CTextEdit fields for all ten knob readouts; native valid entry, invalid input and Escape tests added, including normalized values and edit callbacks. Pending exact CI.

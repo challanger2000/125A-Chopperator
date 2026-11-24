@@ -38,34 +38,34 @@
 <view class="CViewContainer" origin="24, 414" size="912, 104" background-color="Inset" transparent="false" mouse-enabled="false"/>
 <view class="CTextLabel" origin="53, 229" size="170, 22" title="START" font="Label" font-color="Muted" text-alignment="center" transparent="true" mouse-enabled="false"/>
 <view class="CAnimKnob" origin="74, 250" size="128, 128" bitmap="knobL" control-tag="P100" wheel-inc-value="0.166666666667" transparent="true"/>
-<view class="CTextLabel" origin="53, 376" size="170, 22" title="" font="Value" font-color="Text" text-alignment="center" transparent="true" mouse-enabled="false" control-tag="P100"/>
+<view class="CTextEdit" custom-view-name="ValueReadout" style-doubleclick="true" immediate-text-change="false" back-color="Inset" origin="53, 376" size="170, 22" title="" font="Value" font-color="Text" text-alignment="center" transparent="true" mouse-enabled="true" control-tag="P100"/>
 <view class="CTextLabel" origin="281, 229" size="170, 22" title="MID" font="Label" font-color="Muted" text-alignment="center" transparent="true" mouse-enabled="false"/>
 <view class="CAnimKnob" origin="302, 250" size="128, 128" bitmap="knobL" control-tag="P101" wheel-inc-value="0.166666666667" transparent="true"/>
-<view class="CTextLabel" origin="281, 376" size="170, 22" title="" font="Value" font-color="Text" text-alignment="center" transparent="true" mouse-enabled="false" control-tag="P101"/>
+<view class="CTextEdit" custom-view-name="ValueReadout" style-doubleclick="true" immediate-text-change="false" back-color="Inset" origin="281, 376" size="170, 22" title="" font="Value" font-color="Text" text-alignment="center" transparent="true" mouse-enabled="true" control-tag="P101"/>
 <view class="CTextLabel" origin="509, 229" size="170, 22" title="END" font="Label" font-color="Muted" text-alignment="center" transparent="true" mouse-enabled="false"/>
 <view class="CAnimKnob" origin="530, 250" size="128, 128" bitmap="knobL" control-tag="P102" wheel-inc-value="0.166666666667" transparent="true"/>
-<view class="CTextLabel" origin="509, 376" size="170, 22" title="" font="Value" font-color="Text" text-alignment="center" transparent="true" mouse-enabled="false" control-tag="P102"/>
+<view class="CTextEdit" custom-view-name="ValueReadout" style-doubleclick="true" immediate-text-change="false" back-color="Inset" origin="509, 376" size="170, 22" title="" font="Value" font-color="Text" text-alignment="center" transparent="true" mouse-enabled="true" control-tag="P102"/>
 <view class="CTextLabel" origin="737, 229" size="170, 22" title="LENGTH" font="Label" font-color="Muted" text-alignment="center" transparent="true" mouse-enabled="false"/>
 <view class="CAnimKnob" origin="758, 250" size="128, 128" bitmap="knobL" control-tag="P103" wheel-inc-value="0.0153846153846" transparent="true"/>
-<view class="CTextLabel" origin="737, 376" size="170, 22" title="" font="Value" font-color="Text" text-alignment="center" transparent="true" mouse-enabled="false" control-tag="P103"/>
+<view class="CTextEdit" custom-view-name="ValueReadout" style-doubleclick="true" immediate-text-change="false" back-color="Inset" origin="737, 376" size="170, 22" title="" font="Value" font-color="Text" text-alignment="center" transparent="true" mouse-enabled="true" control-tag="P103"/>
 <view class="CTextLabel" origin="28, 417" size="144, 19" title="MID POSITION" font="Label" font-color="Muted" text-alignment="center" transparent="true" mouse-enabled="false"/>
 <view class="CAnimKnob" origin="68, 436" size="64, 64" bitmap="knobS" control-tag="P104" wheel-inc-value="0.01" transparent="true"/>
-<view class="CTextLabel" custom-view-name="PercentReadout" origin="28, 500" size="144, 18" title="" font="Label" font-color="Text" text-alignment="center" transparent="true" mouse-enabled="false" control-tag="P104"/>
+<view class="CTextEdit" custom-view-name="ValueReadout" style-doubleclick="true" immediate-text-change="false" back-color="Inset" origin="28, 500" size="144, 18" title="" font="Label" font-color="Text" text-alignment="center" transparent="true" mouse-enabled="true" control-tag="P104"/>
 <view class="CTextLabel" origin="180, 417" size="144, 19" title="CURVE" font="Label" font-color="Muted" text-alignment="center" transparent="true" mouse-enabled="false"/>
 <view class="CAnimKnob" origin="220, 436" size="64, 64" bitmap="knobS" control-tag="P105" wheel-inc-value="0.01" transparent="true"/>
-<view class="CTextLabel" custom-view-name="PercentReadout" origin="180, 500" size="144, 18" title="" font="Label" font-color="Text" text-alignment="center" transparent="true" mouse-enabled="false" control-tag="P105"/>
+<view class="CTextEdit" custom-view-name="ValueReadout" style-doubleclick="true" immediate-text-change="false" back-color="Inset" origin="180, 500" size="144, 18" title="" font="Label" font-color="Text" text-alignment="center" transparent="true" mouse-enabled="true" control-tag="P105"/>
 <view class="CTextLabel" origin="332, 417" size="144, 19" title="WIDTH" font="Label" font-color="Muted" text-alignment="center" transparent="true" mouse-enabled="false"/>
 <view class="CAnimKnob" origin="372, 436" size="64, 64" bitmap="knobS" control-tag="P107" wheel-inc-value="0.01" transparent="true"/>
-<view class="CTextLabel" custom-view-name="PercentReadout" origin="332, 500" size="144, 18" title="" font="Label" font-color="Text" text-alignment="center" transparent="true" mouse-enabled="false" control-tag="P107"/>
+<view class="CTextEdit" custom-view-name="ValueReadout" style-doubleclick="true" immediate-text-change="false" back-color="Inset" origin="332, 500" size="144, 18" title="" font="Label" font-color="Text" text-alignment="center" transparent="true" mouse-enabled="true" control-tag="P107"/>
 <view class="CTextLabel" origin="484, 417" size="144, 19" title="ATTACK" font="Label" font-color="Muted" text-alignment="center" transparent="true" mouse-enabled="false"/>
 <view class="CAnimKnob" origin="524, 436" size="64, 64" bitmap="knobS" control-tag="P108" wheel-inc-value="0.01" transparent="true"/>
-<view class="CTextLabel" custom-view-name="PercentReadout" origin="484, 500" size="144, 18" title="" font="Label" font-color="Text" text-alignment="center" transparent="true" mouse-enabled="false" control-tag="P108"/>
+<view class="CTextEdit" custom-view-name="ValueReadout" style-doubleclick="true" immediate-text-change="false" back-color="Inset" origin="484, 500" size="144, 18" title="" font="Label" font-color="Text" text-alignment="center" transparent="true" mouse-enabled="true" control-tag="P108"/>
 <view class="CTextLabel" origin="636, 417" size="144, 19" title="RELEASE" font="Label" font-color="Muted" text-alignment="center" transparent="true" mouse-enabled="false"/>
 <view class="CAnimKnob" origin="676, 436" size="64, 64" bitmap="knobS" control-tag="P109" wheel-inc-value="0.01" transparent="true"/>
-<view class="CTextLabel" custom-view-name="PercentReadout" origin="636, 500" size="144, 18" title="" font="Label" font-color="Text" text-alignment="center" transparent="true" mouse-enabled="false" control-tag="P109"/>
+<view class="CTextEdit" custom-view-name="ValueReadout" style-doubleclick="true" immediate-text-change="false" back-color="Inset" origin="636, 500" size="144, 18" title="" font="Label" font-color="Text" text-alignment="center" transparent="true" mouse-enabled="true" control-tag="P109"/>
 <view class="CTextLabel" origin="788, 417" size="144, 19" title="MIX" font="Label" font-color="Muted" text-alignment="center" transparent="true" mouse-enabled="false"/>
 <view class="CAnimKnob" origin="828, 436" size="64, 64" bitmap="knobS" control-tag="P110" wheel-inc-value="0.01" transparent="true"/>
-<view class="CTextLabel" custom-view-name="PercentReadout" origin="788, 500" size="144, 18" title="" font="Label" font-color="Text" text-alignment="center" transparent="true" mouse-enabled="false" control-tag="P110"/>
+<view class="CTextEdit" custom-view-name="ValueReadout" style-doubleclick="true" immediate-text-change="false" back-color="Inset" origin="788, 500" size="144, 18" title="" font="Label" font-color="Text" text-alignment="center" transparent="true" mouse-enabled="true" control-tag="P110"/>
 <view class="CSegmentButton" origin="24, 528" size="912, 36" control-tag="P106" segment-names="RECT,SAW UP,SAW DOWN,TRIANGLE,SINE" selection-mode="Single" style="horizontal" font="Label" text-color="Text" text-color-highlighted="Amber" frame-color="Frame" frame-width="1" round-radius="6" gradient="Button" gradient-highlighted="Selected"/>
 <view class="CView" custom-view-name="ResizeGrip" origin="940, 556" size="20, 20" mouse-enabled="true"/>
 <view class="CView" custom-view-name="HelpOverlay" origin="0, 0" size="960, 576" transparent="true" mouse-enabled="false"/>

@@ -478,6 +478,44 @@ void guiAudioChain(const VST3::Hosting::Module::Ptr& module,Native& n,GuiHandler
     std::cout<<"NATIVE_GUI_AUDIO_ALL_13_PASS\n";
 }
 
+
+void valueEntryContract(Native& n,GuiHandler& handler,HWND child){
+    struct Entry{ParamID id;int x,y;const wchar_t* text;double expected;};
+    const Entry entries[]{
+        {100,138,387,L"1/32",5./6},{101,366,387,L"8",3./6},{102,594,387,L"1/64",1},
+        {103,822,387,L"1/4",0},{103,822,387,L"64 Bars",1},
+        {104,100,509,L"75,5%",74.5/98},{105,252,509,L"-25",.375},
+        {107,404,509,L"33.3",.333},{108,556,509,L"12.5%",.125},
+        {109,708,509,L"7,5",.075},{110,860,509,L"80",.8}
+    };
+    const auto edit=[&](const Entry& g,UINT key,bool accepted){
+        const auto before=n.controller->getParamNormalized(g.id);const auto edits=handler.edits;const auto begins=handler.begins;const auto ends=handler.ends;
+        SendMessageW(child,WM_MOUSEMOVE,0,MAKELPARAM(g.x,g.y));
+        SendMessageW(child,WM_LBUTTONDBLCLK,MK_LBUTTON,MAKELPARAM(g.x,g.y));
+        SendMessageW(child,WM_LBUTTONUP,0,MAKELPARAM(g.x,g.y));pumpGui(80);
+        HWND field=GetFocus();wchar_t cls[64]{};
+        require(field&&field!=child&&GetClassNameW(field,cls,64)&&_wcsicmp(cls,L"Edit")==0,"double click opens real SDK text field");
+        require(SetWindowTextW(field,g.text)!=0,"enter actual text");
+        require(n.controller->getParamNormalized(g.id)==before,"uncommitted text leaves parameter unchanged");
+        SendMessageW(field,WM_KEYDOWN,key,1);pumpGui(120);
+        require(!IsWindow(field)||GetFocus()!=field,"text field closes");
+        const auto actual=n.controller->getParamNormalized(g.id);
+        std::cout<<"NATIVE_VALUE_ENTRY id="<<g.id<<" value="<<actual<<" accepted="<<accepted<<"\n";
+        require(std::abs(actual-(accepted?g.expected:before))<1e-9,"typed value normalized");
+        for(std::size_t i=0;i<edits.size();++i){
+            const int delta=accepted&&i==g.id-100?1:0;
+            require(handler.edits[i]-edits[i]==delta&&handler.begins[i]-begins[i]==delta&&handler.ends[i]-ends[i]==delta,"typed value balanced/no spurious automation");
+        }
+    };
+    for(const auto& g:entries)edit(g,VK_RETURN,true);
+    edit({100,138,387,L"1/3",0},VK_RETURN,false);
+    edit({103,822,387,L"65",0},VK_RETURN,false);
+    edit({104,100,509,L"100",0},VK_RETURN,false);
+    edit({107,404,509,L"25oops",0},VK_RETURN,false);
+    edit({110,860,509,L"5",0},VK_ESCAPE,false);
+    std::cout<<"NATIVE_DOUBLE_CLICK_ALL_10_READOUTS_PASS\n";
+}
+
 using PreviewSettings=std::array<double,7>;
 // Independent oracle: closed-form phase integration on a four-quarter bar.
 // No inclusion of the product's Core/Parameters/Preview implementation.
@@ -691,7 +729,7 @@ void guiContract(const VST3::Hosting::Module::Ptr& module,const std::filesystem:
             {{100,468,104}},{{252,468,105}},{{120,546,106}},{{404,468,107}},{{556,468,108}},{{708,468,109}},
             {{860,468,110}},{{610,34,111}},{{820,34,112}}}};
         for(const auto& hit:hits){ParamID id=0;require(finder->findParameter(hit[0],hit[1],id)==kResultTrue&&id==static_cast<ParamID>(hit[2]),"native parameter hit mapping");}
-        if(cycle==0)guiAudioChain(module,n,*handler,child);
+        if(cycle==0){guiAudioChain(module,n,*handler,child);valueEntryContract(n,*handler,child);}
         require(n.controller->setParamNormalized(111,0)==kResultOk,"host active off");
         require(n.controller->setParamNormalized(106,0)==kResultOk,"host rect");
         require(n.controller->setParamNormalized(112,0)==kResultOk,"host one shot");pumpGui(80);

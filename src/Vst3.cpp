@@ -218,6 +218,20 @@ public:
         }
         return kResultOk;
     }
+    tresult PLUGIN_API getParamValueByString(ParamID id,TChar* string,ParamValue& value) override{
+        if(id>=100&&id<=110&&id!=106){
+            if(!string)return kInvalidArgument;
+            std::string ascii;
+            for(std::size_t i=0;i<128;++i){
+                const auto c=string[i];
+                if(!c)return parseEntry(static_cast<Param>(id),ascii,value)?kResultOk:kResultFalse;
+                if(c>127)return kResultFalse;
+                ascii+=static_cast<char>(c);
+            }
+            return kResultFalse;
+        }
+        return EditController::getParamValueByString(id,string,value);
+    }
     tresult PLUGIN_API setParamNormalized(ParamID id,ParamValue value) override{
         Parameters p;if(!p.set(static_cast<Param>(id),value))return kResultFalse;
         const auto result=EditController::setParamNormalized(id,p.get(static_cast<Param>(id)));
