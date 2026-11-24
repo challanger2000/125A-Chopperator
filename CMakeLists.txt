@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.25)
-project(Chopperator VERSION 0.5.0 LANGUAGES CXX)
+project(Chopperator VERSION 0.6.0 LANGUAGES CXX)
 include(CTest)
 find_package(Threads REQUIRED)
 add_executable(chopper_core_tests tests/CoreTests.cpp)

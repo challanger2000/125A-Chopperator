@@ -1,3 +1,3 @@
 # 125A Chopperator
 BPM-synchronized audio chopper with continuous rate transitions and flexible waveform shaping.
-P005 / 0.5.0: headless Windows VST3 quality-measurement candidate. P004 actual Windows functional tests passed. See START-HERE.md and AKTUELLE-VERSION.md.
+P006 / 0.6.0: headless Windows VST3 programme and independent QA candidate. P005 confirmed. See START-HERE.md and AKTUELLE-VERSION.md.

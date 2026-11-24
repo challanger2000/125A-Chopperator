@@ -17,3 +17,6 @@ Source b08522c6b067146613b74c4ab2aa602fef765439; job 138131883189. Positive buil
 - Negative check emitted expected FAIL SINE carrier oracle and exit 1. Workflow erroneously propagated expected exit (GitHub PowerShell wrapper uses LASTEXITCODE); actual job FAIL and no artifact. Fix explicitly exits 0 only after matching both expected diagnostic and code. No DSP change. Rerun required.
 ## Remaining programme material
 One concrete legal guitar fixture candidate: FreePats Electric Guitar FSBS dist2, version 2022-09-11, CC0, https://github.com/freepats/electric-guitar-FSBS-dist2/tree/21261b8bcb02d1cbf52dc02f1b1636df52d4a947 ; recorded and amp-processed Fender. Exact source file samples/bridge/E2_s1_01.flac, Git blob 13db1aafb87c7c63b110ba422e8794113fa4340e; A2_s2_01.flac blob 099f4ba10c56241c7e54d41524adf76fc74af30a. These are single-note recordings, not a real performed power chord. Freesound real power chord and pad sources require original-file download access. Candidates only: bytes not acquired or tested, NOT RUN.
+
+## Corrected workflow run 45300890050
+SUCCESS on 32711507f537bbe462548f28598fd823eb4ba1bd. Repeat of all positive oracles, spectral negative gate PASS, 384 callbacks mean 75.5229 us, p95 93.4 us, p99 131.7 us, max 562.5 us, 0 overruns. Artifact 14878567914, ZIP SHA256 f9659185ea31233343387f9f6a91323fd175f07d37a68f2e82087bbd7919365a.

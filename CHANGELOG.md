@@ -21,3 +21,8 @@
 - Add actual-module coherent AM spectrum, folded rectangular sideband, all five shapes, and paced native dense automation measurements.
 - No DSP algorithm change. Verify spectral oracle with a deliberately wrong expected carrier.
 - P005 CI correction: consume intentional negative-control exit only after verifying both exit code and diagnostic; preserve failed-run evidence. No plugin source change.
+
+## P006 / 0.6.0
+- P005 exact Windows repeat succeeded including spectral negative control.
+- Native PCM checks using pinned real distorted guitar recordings and rendered pad; evidence WAVs separate from plugin.
+- Independent official released 125A Plugin Tester v0.2.10 pinned executable and report gate. No DSP changes.

@@ -41,7 +41,51 @@ jobs:
           # GitHub pwsh appends an exit using LASTEXITCODE; the intentional failure
           # above is consumed only after its exit code and diagnostic are verified.
           exit 0
+      - name: Programme fixture acquisition and native PCM checks
+        shell: pwsh
+        run: |
+          python tools/prepare_programme_fixtures.py fixtures
+          if ($LASTEXITCODE -ne 0) { throw "Fixture acquisition failed" }
+          $plugin = Resolve-Path 'artifact/125A Chopperator.vst3'
+          $native = @(Get-ChildItem build -Recurse -File -Filter chopper_native_tests.exe | Where-Object { $_.FullName -match 'Release' })
+          & $native[0].FullName $plugin.Path --programme (Resolve-Path fixtures).Path
+          if ($LASTEXITCODE -ne 0) { throw "Programme test failed" }
+          New-Item -ItemType Directory -Force -Path evidence | Out-Null
+          Copy-Item fixtures/manifest.json evidence
+          Get-ChildItem fixtures -Filter '*_*.f64le' | ForEach-Object {
+            if ($_.BaseName -match '_(rect|sine)
+        with:
+          name: 125A-Chopperator-P006-Windows-x64-development
+          path: artifact
+) {
+              ffmpeg -v error -nostdin -y -f f64le -ar 48000 -ac 2 -i $_.FullName -c:a pcm_s24le ("evidence/" + $_.BaseName + ".wav")
+              if ($LASTEXITCODE -ne 0) { throw "Evidence WAV conversion failed" }
+            }
+          }
+      - name: Independent released 125A Plugin Tester
+        shell: pwsh
+        run: |
+          $url = 'https://github.com/challanger2000/125A-Plugin-Tester-Final/releases/download/v0.2.10/125A_Plugin_Tester.exe'
+          Invoke-WebRequest -Uri $url -OutFile tester.exe
+          if ((Get-FileHash tester.exe -Algorithm SHA256).Hash.ToLowerInvariant() -ne 'b0f386422d107ac6fa8b15c3e1e86113f52b013e277fc94b16d28b929438bfea') { throw "Tester binary hash mismatch" }
+          $plugin = Resolve-Path 'artifact/125A Chopperator.vst3'
+          $process = Start-Process -FilePath (Resolve-Path tester.exe).Path -ArgumentList @('--portable-test', ('"' + $plugin.Path + '"')) -PassThru
+          if (-not $process.WaitForExit(180000)) { $process.Kill(); throw "Tester timeout" }
+          $process.Refresh()
+          $reports = @(Get-ChildItem artifact -Recurse -File -Filter '*125A*txt')
+          foreach ($report in $reports) { Copy-Item $report.FullName evidence; Get-Content $report.FullName }
+          $qa = @($reports | Where-Object { $_.Name -like '*_125A_QA_Report.txt' })
+          if ($process.ExitCode -ne 0 -or $qa.Count -ne 1) { throw "Tester failed or missing report: exit $($process.ExitCode)" }
+          if (Select-String -Path $qa[0].FullName -Pattern '\[FAIL\]' -Quiet) { throw "Tester reported FAIL" }
+          Get-FileHash (Join-Path $plugin 'Contents/x86_64-win/125A Chopperator.vst3') -Algorithm SHA256 | Format-List
+          Write-Host "INDEPENDENT_TESTER_EXECUTION_PASS"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: 125A-Chopperator-P006-QA-evidence
+          path: evidence
+          if-no-files-found: warn
       - uses: actions/upload-artifact@v4
         with:
-          name: 125A-Chopperator-P005-Windows-x64-development
+          name: 125A-Chopperator-P006-Windows-x64-development
           path: artifact

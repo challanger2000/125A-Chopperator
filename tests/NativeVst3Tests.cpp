@@ -12,6 +12,8 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <filesystem>
+#include <fstream>
 #include <thread>
 #include <cmath>
 #include <cstdlib>
@@ -265,12 +267,78 @@ void realtimeProbe(const VST3::Hosting::Module::Ptr& module){
     // Cloud scheduler and physical ASIO are different. Observation only.
 }
 
+
+void programme(const VST3::Hosting::Module::Ptr& module,const std::filesystem::path& folder){
+    for(const std::string name:{"guitar_e2","guitar_b3","pad_c4"}){
+        std::ifstream in(folder/(name+".f64le"),std::ios::binary|std::ios::ate);
+        require(bool(in),"programme fixture open");
+        const auto bytes=static_cast<std::streamoff>(in.tellg());
+        require(bytes>=48000*16&&bytes%16==0,"programme size");
+        const int frames=static_cast<int>(std::min<std::streamoff>(bytes/16,192000));
+        std::vector<double> source(static_cast<std::size_t>(frames)*2);
+        in.seekg(0);in.read(reinterpret_cast<char*>(source.data()),static_cast<std::streamsize>(source.size()*sizeof(double)));
+        require(bool(in),"programme exact read");
+        for(const int shape:{0,4}){
+            Native n(module);n.start(48000,kSample64,2);
+            setConstant(n,4,shape,shape==0?.5:1.,0,0);
+            SignalBlock b(n,256);
+            std::ofstream out(folder/(name+(shape==0?"_rect":"_sine")+".f64le"),std::ios::binary);
+            require(bool(out),"programme output open");
+            double dryPower=0,wetPower=0,deltaPower=0,errorPower=0,referencePower=0;
+            int checked=0;
+            for(int i=0;i<frames;){
+                const int count=std::min(256,frames-i);b.data.numSamples=count;
+                for(int k=0;k<count;++k){b.l[k]=source[2*(i+k)];b.r[k]=source[2*(i+k)+1];}
+                b.process(n);
+                for(int k=0;k<count;++k){
+                    const int j=i+k,phase=j%6000;
+                    // Independent steady-state analytic envelope. Exclude minimum-slew
+                    // transition samples for rectangular shape; quantify separately
+                    // against the slope bound. Sine starts at zero after activation.
+                    const bool oracle=j>=6000&&(shape==4||(phase>=32&&phase<3000)||(phase>=3032));
+                    const double g=shape==0?(phase<3000?1.:0.):.5-.5*std::cos(2*pi*phase/6000.);
+                    for(int c=0;c<2;++c){
+                        const double x=source[2*j+c],y=c==0?b.ol[k]:b.orr[k];
+                        require(std::isfinite(x)&&std::isfinite(y)&&std::abs(y)<=std::abs(x)+1e-13,"programme finite no boost");
+                        require(x*y>=0,"programme polarity");
+                        dryPower+=x*x;wetPower+=y*y;deltaPower+=(x-y)*(x-y);
+                        if(oracle){
+                            const double ref=x*g;
+                            errorPower+=(y-ref)*(y-ref);referencePower+=x*x;++checked;
+                        }
+                        out.write(reinterpret_cast<const char*>(&y),sizeof(y));
+                    }
+                }
+                i+=count;
+            }
+            require(bool(out)&&checked>10000&&referencePower>1e-5&&dryPower>1e-5,"programme meaningful signal");
+            require(wetPower>1e-6&&wetPower<.9*dryPower&&deltaPower>.01*dryPower,"programme audible modulation not constant dry or mute");
+            const double relative=std::sqrt(errorPower/referencePower);
+            require(relative<1e-8,"programme independent PCM envelope");
+            std::cout<<"PROGRAMME_PASS "<<name<<" shape="<<shape<<" frames="<<frames
+                     <<" relative_error="<<relative<<" wet_dB="<<10*std::log10(wetPower/dryPower)<<"\n";
+            // Same fixture through settled hard dry on a separate native instance.
+            Native dry(module);dry.start(48000,kSample64,2);
+            ParameterChanges p(14);point(p,110,0,0);dry.flush(p,kSample64);
+            SignalBlock d(dry,256);
+            for(int i=0;i<frames;){
+                const int count=std::min(256,frames-i);d.data.numSamples=count;
+                for(int k=0;k<count;++k){d.l[k]=source[2*(i+k)];d.r[k]=source[2*(i+k)+1];}
+                d.process(dry);
+                for(int k=24;k<count;++k)require(d.ol[k]==d.l[k]&&d.orr[k]==d.r[k],"programme settled exact dry");
+                i+=count;
+            }
+        }
+    }
+}
+
 int main(int argc,char** argv){
-    require(argc==2||argc==3,"bundle argument");
+    require(argc==2||argc==3||argc==4,"bundle argument");
     std::string error;auto module=VST3::Hosting::Module::create(argv[1],error);
     if(!module){std::cerr<<error<<'\n';return 1;}
     HostApplication host;PluginContextFactory::instance().setPluginContext(&host);
     module->getFactory().setHostContext(&host);
+    if(argc==4){require(std::string(argv[2])=="--programme","programme argument");programme(module,argv[3]);return 0;}
     if(argc==3){require(std::string(argv[2])=="--negative-spectrum","negative control argument");spectral(module,true);return 2;}
     waveformContracts(module);spectral(module,false);realtimeProbe(module);
     timing<float>(module,48000,2);timing<double>(module,48000,1);
