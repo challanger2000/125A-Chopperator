@@ -8,6 +8,8 @@
 #include "vstgui/lib/events.h"
 #include "vstgui/lib/cvstguitimer.h"
 #include <vector>
+#include <cstdio>
+#include <cstdlib>
 #include <functional>
 #include "vstgui/lib/controls/cknob.h"
 #include "vstgui/lib/controls/ctextlabel.h"
@@ -76,6 +78,10 @@ public:
     }
     void draw(VSTGUI::CDrawContext* c) override {
         refresh(false);
+        if(trace&&lastDrawn!=previous){
+            lastDrawn=previous;
+            std::fprintf(stderr,"PREVIEW_RENDER_TRACE start=%.8f mid=%.8f end=%.8f length=%.8f position=%.8f curve=%.8f width=%.8f pulses=%zu first_end=%.9f\n",previous[0],previous[1],previous[2],previous[3],previous[4],previous[5],previous[6],count,count?ends[0]:0.);
+        }
         using namespace VSTGUI;
         const auto r=getViewSize();
         // Owner's Unbenannt.svg: viewBox 340 x 110. This is a timing
@@ -140,13 +146,15 @@ private:
                 ++count;
             }
         }
+        if(trace)std::fprintf(stderr,"PREVIEW_MODEL_TRACE start=%.8f pulses=%zu first_end=%.9f\n",now[0],count,count?ends[0]:0.);
         if(redraw)repaint();return true;
     }
     Steinberg::Vst::EditController* controller;
     EditorPreferences& prefs;
     VSTGUI::SharedPointer<VSTGUI::CVSTGUITimer> timer;
     bool pending=false;
-    std::array<double,7> previous{};
+    const bool trace=std::getenv("CHOPPER_GUI_TRACE")!=nullptr;
+    std::array<double,7> previous{},lastDrawn{};
     std::array<double,4096> starts{},ends{};
     std::size_t count=0;
     double position=.5;

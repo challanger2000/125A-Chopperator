@@ -69,7 +69,16 @@ jobs:
             if (-not (Test-Path (Join-Path $resources $name) -PathType Leaf)) { throw "Missing staged GUI resource $name" }
           }
           & $native[0].FullName $plugin.Path --editor (Resolve-Path evidence).Path
-          if ($LASTEXITCODE -ne 0) { throw "Native GUI interaction failed" }
+          $editorExit = $LASTEXITCODE
+          # Separate fresh processes ensure a preview failure cannot prevent
+          # corner/help/recall diagnostics, or vice versa.
+          $env:CHOPPER_GUI_TRACE = '1'
+          & $native[0].FullName $plugin.Path --preview (Resolve-Path evidence).Path
+          $previewExit = $LASTEXITCODE
+          Remove-Item Env:CHOPPER_GUI_TRACE
+          Write-Host "NATIVE_GUI_GATE editor=$editorExit preview=$previewExit"
+          if ($editorExit -ne 0 -or $previewExit -ne 0) { throw "Native GUI interaction or timing display failed" }
+          exit 0
       - name: Programme fixture acquisition and native PCM checks
         shell: pwsh
         run: |

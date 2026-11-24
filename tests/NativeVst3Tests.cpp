@@ -415,7 +415,7 @@ bool previewExpected(const PreviewSettings& p,double x){
     const double phase=bars*integrated;
     return phase-std::floor(phase)<p[6];
 }
-std::vector<bool> previewRow(HWND child,int y){
+std::vector<bool> previewRow(HWND child,int y,bool desktop=false){
     constexpr int first=52,last=908;
     // Synchronize the compositor without forcing a product redraw.
     if(HMODULE dwm=LoadLibraryW(L"dwmapi.dll")){
@@ -423,24 +423,26 @@ std::vector<bool> previewRow(HWND child,int y){
         if(auto flush=reinterpret_cast<Flush>(GetProcAddress(dwm,"DwmFlush")))flush();
         FreeLibrary(dwm);
     }
-    HDC screen=GetDC(child);require(screen!=nullptr,"preview screen DC");
+    POINT origin{0,y};if(desktop)require(ClientToScreen(child,&origin)!=0,"desktop capture coordinates");
+    HWND source=desktop?nullptr:child;
+    HDC screen=GetDC(source);require(screen!=nullptr,"preview screen DC");
     HDC dc=CreateCompatibleDC(screen);require(dc!=nullptr,"preview memory DC");
     BITMAPINFO bi{};bi.bmiHeader.biSize=sizeof(BITMAPINFOHEADER);bi.bmiHeader.biWidth=960;bi.bmiHeader.biHeight=-1;
     bi.bmiHeader.biPlanes=1;bi.bmiHeader.biBitCount=32;bi.bmiHeader.biCompression=BI_RGB;
     void* pixels=nullptr;HBITMAP bitmap=CreateDIBSection(dc,&bi,DIB_RGB_COLORS,&pixels,nullptr,0);
     require(bitmap&&pixels,"preview scanline DIB");
     auto prev=SelectObject(dc,bitmap);
-    require(BitBlt(dc,0,0,960,1,screen,0,y,SRCCOPY)!=0,"preview scanline capture");GdiFlush();
+    require(BitBlt(dc,0,0,960,1,screen,origin.x,origin.y,desktop?(SRCCOPY|CAPTUREBLT):SRCCOPY)!=0,"preview scanline capture");GdiFlush();
     const auto* data=static_cast<const std::uint32_t*>(pixels);
     std::vector<bool> result;result.reserve(last-first+1);
     for(int x=first;x<=last;++x){
         const auto v=data[x];const int r=(v>>16)&255,g=(v>>8)&255,b=v&255;
         result.push_back(r>170&&g>100&&g<205&&b<100);
     }
-    SelectObject(dc,prev);DeleteObject(bitmap);DeleteDC(dc);ReleaseDC(child,screen);
+    SelectObject(dc,prev);DeleteObject(bitmap);DeleteDC(dc);ReleaseDC(source,screen);
     return result;
 }
-void assertPreview(const std::vector<bool>& actual,const PreviewSettings& p){
+bool matchesPreview(const std::vector<bool>& actual,const PreviewSettings& p){
     constexpr double origin=24+912.*10/340,span=912.*320/340;
     int stable=0,errors=0,open=0,closed=0;
     for(std::size_t i=0;i<actual.size();++i){
@@ -452,8 +454,9 @@ void assertPreview(const std::vector<bool>& actual,const PreviewSettings& p){
         ++stable;open+=expected;closed+=!expected;errors+=actual[i]!=expected;
     }
     std::cout<<"PREVIEW_ORACLE stable="<<stable<<" errors="<<errors<<" open="<<open<<" closed="<<closed<<"\n";
-    require(stable>500&&errors<=2,"rendered timing diagram matches independent phase oracle");
+    return stable>500&&errors<=2;
 }
+void assertPreview(const std::vector<bool>& actual,const PreviewSettings& p){require(matchesPreview(actual,p),"rendered timing diagram matches independent phase oracle");}
 void previewContract(Native& n,HWND child){
     constexpr std::array<ParamID,7> ids{100,101,102,103,104,105,107};
     constexpr PreviewSettings baseline{4./6,1./6,4./6,5./65,.5,.5,.5};
@@ -463,9 +466,13 @@ void previewContract(Native& n,HWND child){
         pumpGui(180);
     };
     apply(baseline);
-    const auto base=previewRow(child,125);
+    const auto childBase=previewRow(child,125);
+    const auto desktopBase=previewRow(child,125,true);
+    const bool desktop=matchesPreview(desktopBase,baseline);
+    std::cout<<"PREVIEW_CAPTURE_SOURCE "<<(desktop?"desktop composed pixels":"child DC pixels")<<"\n";
+    const auto base=desktop?desktopBase:childBase;
     assertPreview(base,baseline);
-    require(previewRow(child,110)==base&&previewRow(child,145)==base,"equal height timing rectangles");
+    require(previewRow(child,110,desktop)==base&&previewRow(child,145,desktop)==base,"equal height timing rectangles");
     // Every knob changes the actual rendered pixels by left-button drag.
     // Check the mathematically expected new pattern, not merely a repaint.
     constexpr std::array<std::array<int,3>,7> gestures{{{{138,314,-25}},{{366,314,25}},{{594,314,-25}},
@@ -477,14 +484,17 @@ void previewContract(Native& n,HWND child){
         dragGui(child,g[0],g[1],g[2]);pumpGui(180);
         auto changed=baseline;changed[i]=expected[i];
         require(std::abs(n.controller->getParamNormalized(ids[i])-changed[i])<1e-6,"preview drag parameter");
-        const auto actual=previewRow(child,125);
+        const auto actual=previewRow(child,125,desktop);
         int delta=0;for(std::size_t x=0;x<base.size();++x)delta+=actual[x]!=base[x];
-        std::cout<<"PREVIEW_PIXEL_DIAGNOSTIC id="<<ids[i]<<" delta="<<delta<<"\n";
+        const auto alternate=previewRow(child,125,!desktop);
+        const auto& altBase=desktop?childBase:desktopBase;
+        int altDelta=0;for(std::size_t x=0;x<base.size();++x)altDelta+=alternate[x]!=altBase[x];
+        std::cout<<"PREVIEW_PIXEL_DIAGNOSTIC id="<<ids[i]<<" delta="<<delta<<" alternate_delta="<<altDelta<<"\n";
         if(delta<=12){
             // Diagnostic only: forced repaint may distinguish capture/paint
             // delivery from the phase algorithm. Do not accept it as a pass.
             RedrawWindow(child,nullptr,nullptr,RDW_INVALIDATE|RDW_UPDATENOW|RDW_ALLCHILDREN);pumpGui(120);
-            const auto forced=previewRow(child,125);int forcedDelta=0;
+            const auto forced=previewRow(child,125,desktop);int forcedDelta=0;
             for(std::size_t x=0;x<base.size();++x)forcedDelta+=forced[x]!=base[x];
             std::cout<<"PREVIEW_FORCED_PAINT_DIAGNOSTIC delta="<<forcedDelta<<"\n";
         }
@@ -496,16 +506,16 @@ void previewContract(Native& n,HWND child){
     apply(baseline);
     for(const auto id:{106u,108u,109u,110u}){
         require(n.controller->setParamNormalized(id,id==110?0.:1.)==kResultOk,"non timing parameter");
-        pumpGui(120);require(previewRow(child,125)==base,"timing geometry independent of gain shape");
+        pumpGui(120);require(previewRow(child,125,desktop)==base,"timing geometry independent of gain shape");
     }
-    auto edge=baseline;edge[6]=0;apply(edge);const auto empty=previewRow(child,125);
+    auto edge=baseline;edge[6]=0;apply(edge);const auto empty=previewRow(child,125,desktop);
     require(std::none_of(empty.begin(),empty.end(),[](bool v){return v;}),"width zero empty preview");
-    edge[6]=1;apply(edge);assertPreview(previewRow(child,125),edge);
-    apply(baseline);require(previewRow(child,125)==base,"preview host restore exact");
+    edge[6]=1;apply(edge);assertPreview(previewRow(child,125,desktop),edge);
+    apply(baseline);require(previewRow(child,125,desktop)==base,"preview host restore exact");
     std::cout<<"NATIVE_TIMING_DISPLAY_ALL_7_REACTIVE_PASS\n";
 }
 
-void guiContract(const VST3::Hosting::Module::Ptr& module,const std::filesystem::path& folder){
+void guiContract(const VST3::Hosting::Module::Ptr& module,const std::filesystem::path& folder,bool previewOnly=false){
     Native n(module);auto handler=owned(new GuiHandler);
     require(n.controller->setComponentHandler(handler.get())==kResultOk,"gui handler");
     const auto inst=GetModuleHandleW(nullptr);
@@ -525,6 +535,13 @@ void guiContract(const VST3::Hosting::Module::Ptr& module,const std::filesystem:
         require(view->attached(host,kPlatformTypeHWND)==kResultOk,"editor attach");
         ShowWindow(host,SW_SHOWNA);UpdateWindow(host);pumpGui(150);
         HWND child=GetWindow(host,GW_CHILD);require(child!=nullptr,"native editor child");
+        if(previewOnly){
+            // Independent fresh editor, no unrelated resize/other QA state.
+            SetWindowPos(host,HWND_TOPMOST,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE);
+            pumpGui(150);previewContract(n,child);
+            require(view->removed()==kResultOk&&view->setFrame(nullptr)==kResultOk,"preview editor removal");
+            DestroyWindow(host);pumpGui(50);break;
+        }
         FUnknownPtr<IParameterFinder> finder(view.get());
         require(finder.getInterface()!=nullptr,"native parameter finder");
         const std::array<std::array<int,3>,13> hits{{{{138,314,100}},{{366,314,101}},{{594,314,102}},{{822,314,103}},
@@ -600,7 +617,6 @@ void guiContract(const VST3::Hosting::Module::Ptr& module,const std::filesystem:
         ViewRect original{0,0,960,576};require(view->checkSizeConstraint(&original)==kResultOk&&frame->resizeView(view.get(),&original)==kResultOk,"resize restore");pumpGui(100);
         require(view->getSize(&size)==kResultOk&&size.getWidth()==960&&size.getHeight()==576,"restored geometry");
         require(GetClientRect(child,&childRect)!=0&&childRect.right==960&&childRect.bottom==576,"restored child geometry");
-        if(cycle==0)previewContract(n,child);
         // The plugin's own corner grip requests intermediate sizes from the host.
         SendMessageW(child,WM_MOUSEMOVE,0,MAKELPARAM(950,566));
         SendMessageW(child,WM_LBUTTONDOWN,MK_LBUTTON,MAKELPARAM(950,566));
@@ -682,7 +698,7 @@ int main(int argc,char** argv){
     if(!module){std::cerr<<error<<'\n';return 1;}
     HostApplication host;PluginContextFactory::instance().setPluginContext(&host);
     module->getFactory().setHostContext(&host);
-    if(argc==4){if(std::string(argv[2])=="--editor"){guiContract(module,argv[3]);return 0;}require(std::string(argv[2])=="--programme","programme argument");programme(module,argv[3]);return 0;}
+    if(argc==4){if(std::string(argv[2])=="--editor"||std::string(argv[2])=="--preview"){guiContract(module,argv[3],std::string(argv[2])=="--preview");return 0;}require(std::string(argv[2])=="--programme","programme argument");programme(module,argv[3]);return 0;}
     if(argc==3){require(std::string(argv[2])=="--negative-spectrum","negative control argument");spectral(module,true);return 2;}
     waveformContracts(module);spectral(module,false);realtimeProbe(module);
     timing<float>(module,48000,2);timing<double>(module,48000,1);
