@@ -171,6 +171,26 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Independent Lab technical baseline failed" }
           $report = Get-Content evidence/test-lab/UNIVERSAL-QA-RESULT.json -Raw | ConvertFrom-Json
           if ($report.status -ne 'TECHNICAL_BASELINE_PASS' -or $report.release_approved -ne $false) { throw "Lab evidence incomplete" }
+          python tools/prepare_lab_control_plan.py --plugin "$plugin" --gui-host "$gui" --out evidence/lab-controls
+          if ($LASTEXITCODE -ne 0) { throw "Product control plan creation failed" }
+          python test-lab/tests/run_product_test_plan.py --plan evidence/lab-controls/approved-plan.json --coverage-matrix evidence/lab-controls/features.json --out evidence/lab-controls/results --timeout 110
+          if ($LASTEXITCODE -ne 0) { throw "Independent declared control coverage failed" }
+          $coverage = Get-Content evidence/lab-controls/results/PRODUCT-TEST-PLAN-RESULT.json -Raw | ConvertFrom-Json
+          if ($coverage.status -ne 'CONTRACT_PASS' -or $coverage.required_feature_coverage -ne 'REQUIRED_COVERAGE_COMPLETE' -or $coverage.declared_cases -ne 13 -or $coverage.passed_cases -ne 13 -or $coverage.failed_cases -ne 0 -or $coverage.not_run_cases -ne 0 -or $coverage.release_approved -ne $false) { throw "Declared 13-control evidence incomplete" }
+      - name: Verify exact candidate archive and extracted bundle
+        shell: pwsh
+        run: |
+          python tools/verify_candidate_archive.py --root artifact --out distribution --extract clean-archive --evidence evidence
+          if ($LASTEXITCODE -ne 0) { throw "Candidate archive verification failed" }
+          $plugin = (Resolve-Path 'clean-archive/125A Chopperator.vst3').Path
+          $validator = @(Get-ChildItem build -Recurse -File -Filter validator.exe | Where-Object { $_.FullName -match 'Release' })
+          $native = @(Get-ChildItem build -Recurse -File -Filter chopper_native_tests.exe | Where-Object { $_.FullName -match 'Release' })
+          if ($validator.Count -ne 1 -or $native.Count -ne 1) { throw "Exact validation hosts unavailable" }
+          & $validator[0].FullName $plugin
+          if ($LASTEXITCODE -ne 0) { throw "Extracted candidate validator failed" }
+          & $native[0].FullName $plugin --resource-positive
+          if ($LASTEXITCODE -ne 0) { throw "Extracted candidate editor failed" }
+          Write-Host "P009_EXTRACTED_CANDIDATE_PASS"
       - name: Generate static GUI draft with original 125A assets
         if: always() && steps.ffmpeg.outcome == 'success'
         shell: pwsh
@@ -187,3 +207,8 @@ jobs:
         with:
           name: 125A-Chopperator-P009-Windows-x64-development
           path: artifact
+      - uses: actions/upload-artifact@v4
+        with:
+          name: 125A-Chopperator-P009-verified-candidate-archive
+          path: distribution
+          if-no-files-found: error
