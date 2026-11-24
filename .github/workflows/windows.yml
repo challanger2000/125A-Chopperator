@@ -41,6 +41,18 @@ jobs:
           # GitHub pwsh appends an exit using LASTEXITCODE; the intentional failure
           # above is consumed only after its exit code and diagnostic are verified.
           exit 0
+      - name: Provision pinned FFmpeg fixture tool
+        id: ffmpeg
+        shell: pwsh
+        run: |
+          python -m pip install --only-binary=:all: --disable-pip-version-check imageio-ffmpeg==0.6.0
+          if ($LASTEXITCODE -ne 0) { throw "Pinned FFmpeg wheel installation failed" }
+          $source = python -c "import imageio_ffmpeg; print(imageio_ffmpeg.get_ffmpeg_exe())"
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path $source -PathType Leaf)) { throw "FFmpeg executable unavailable" }
+          New-Item -ItemType Directory -Force -Path fixture-tools | Out-Null
+          Copy-Item $source fixture-tools/ffmpeg.exe
+          Get-FileHash fixture-tools/ffmpeg.exe -Algorithm SHA256 | Format-List
+          (Resolve-Path fixture-tools).Path | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
       - name: Programme fixture acquisition and native PCM checks
         shell: pwsh
         run: |
@@ -77,6 +89,14 @@ jobs:
           if (Select-String -Path $qa[0].FullName -Pattern '\[FAIL\]' -Quiet) { throw "Tester reported FAIL" }
           Get-FileHash (Join-Path $plugin 'Contents/x86_64-win/125A Chopperator.vst3') -Algorithm SHA256 | Format-List
           Write-Host "INDEPENDENT_TESTER_EXECUTION_PASS"
+      - name: Generate static GUI draft with original 125A assets
+        if: always() && steps.ffmpeg.outcome == 'success'
+        shell: pwsh
+        run: |
+          python tools/prepare_gui_design.py gui-draft
+          if ($LASTEXITCODE -ne 0) { throw "Static design asset verification failed" }
+          New-Item -ItemType Directory -Force -Path evidence | Out-Null
+          Copy-Item gui-draft/Chopperator-static-draft.svg evidence
       - uses: actions/upload-artifact@v4
         if: always()
         with:
