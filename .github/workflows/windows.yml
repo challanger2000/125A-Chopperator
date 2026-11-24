@@ -2,7 +2,7 @@ name: Windows x64 VST3 and core contracts
 on:
   push:
     branches: [main]
-    paths: ['src/**','tests/**','CMakeLists.txt','.github/workflows/windows.yml']
+    paths: ['src/**','tests/**','CMakeLists.txt','.github/workflows/windows.yml','tools/**','resources/**']
   workflow_dispatch:
 jobs:
   build:

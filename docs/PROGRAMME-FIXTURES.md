@@ -7,3 +7,6 @@ Status: acquisition script authored, network and decoding execution NOT RUN. The
 
 ## P006
 Test the actual Windows VST3 on up to four seconds of each verified decoded source, 48 kHz stereo double precision, constant 8 Hz rectangle and sine. Independent steady-state analytic PCM reference outside rectangle slew transitions, finite bounded signed output, meaningful wet RMS reduction and exact settled dry. Preserve generated listening WAVs and manifest separately; no claim of human audition. Test official portable v0.2.10 via --portable-test and inspect actual reports. This is released tester coverage, not the newer development candidate or full Test Lab. P006 execution pending.
+
+## Executed P006 result
+Run 45305616120, commit ac2678b51eb80c4eb6fa716ab8601a9a09aca2d5: all six programme oracles passed. Each 192000 frames. Guitar E2 RECT relative error 0, wet -3.0268 dB; SINE 2.26723e-15, -4.24792 dB. Guitar B3 RECT 0, -3.03156 dB; SINE 2.13157e-15, -4.22532 dB. Pad C4 RECT 0, -2.99816 dB; SINE 2.1118e-15, -4.23586 dB. Independent tester 55 PASS, 0 WARNING, 0 FAIL. All source/PCM identities and six listening WAVs in QA evidence artifact 14880528429. Human listening NOT RUN; actual simultaneous recorded power chord not tested. Overall workflow failure limited to later GUI logo acquisition, not these completed gates.

@@ -47,8 +47,12 @@ def main():
         if raw[:8]!=b"\x89PNG\r\n\x1a\n" or struct.unpack(">II",raw[16:24])!=(size,size*128):
             raise RuntimeError("Unexpected original strip geometry "+name)
         source[(family,scale)]=path
-    logo=acquire(raw_url+"125A-Branding/"+BRAND_COMMIT+"/125A_Logo_Master_FINAL.svg",
-                 out/"125A_Logo_Master_FINAL.svg","bd398ffa3b728b1a847bb519fad8168222bccb48")
+    # The private branding repository is not available to anonymous CI.
+    # Only the designated public-facing product logo is vendored, no credentials or other files.
+    logo=(Path(__file__).resolve().parent.parent/"resources"/"125A_Logo_Master_FINAL.svg").read_bytes()
+    if hashlib.sha1(b"blob "+str(len(logo)).encode()+b"\0"+logo).hexdigest()!="bd398ffa3b728b1a847bb519fad8168222bccb48":
+        raise RuntimeError("Vendored master logo integrity mismatch")
+    (out/"125A_Logo_Master_FINAL.svg").write_bytes(logo)
     if ET.fromstring(logo).attrib.get("viewBox")!="0 0 1774 887": raise RuntimeError("logo geometry")
     svg=['<svg xmlns="http://www.w3.org/2000/svg" width="960" height="576" viewBox="0 0 960 576">',
          '<defs><linearGradient id="panel" x2="0" y2="1"><stop stop-color="#33363a"/><stop offset="1" stop-color="#1e2023"/></linearGradient></defs>',
