@@ -1,4 +1,9 @@
 # Current version
+P008 / 0.8.0 RC — Glass V2. Latest verified development build: exact source 0bb5c8008b12c46f05c0152c8f88f4a3bfbc971c, Windows workflow 45448077627 SUCCESS, job 138637255548. 4/4 CTests, 47/47 Steinberg validator, 57 PASS / 0 WARNING / 0 FAIL independent tester; native double-click entry, centered help, continuous resize, actual UI recall and seven timing display controls PASS. Owner requested visible glass effect after rejecting subtle V1. Actual native screenshot inspected: distinct diagonal specular bands across both recessed control groups and stronger edges. Screenshot also contains blue selections from text-entry QA; it is not a clean promotional capture. Owner visual acceptance of V2 pending. Owner explicitly holds Codex and comprehensive release audit until requested. No FINAL release.
+
+Development artifact 14947605823, locally verified SHA256 01344fafcb89463ab4f2c3fc13274b215a212b1d4e0f8a8409b91428ebfac112, CRC PASS, unchanged complete Windows VST3 ZIP; delivered as 125A-Chopperator-v0.8.0-RC-Glass-v2-Windows-x64.zip. QA artifact 14947285943, locally verified SHA256 f34d371aac8c924e160d4d0e8208b4202dc4f2396f69a3217e5f570749155cd9, CRC PASS. Actual native-editor.bmp 960x576 extracted and viewed. No DSP changes since prior candidate.
+
+## Previous status and historical evidence
 P008 / 0.8.0 — technical Windows candidate available for owner Studio Pro practical acceptance. Exact tested source 473bbbca236e3cb8d8a51e4c7dbcbf8b8136f8a4, Windows run 45427106965 SUCCESS. All thirteen native GUI-to-host-to-audio paths and fresh-instance PCM recall PASS, including negative unchanged-sound checks. Existing 4/4 CTests, 47/47 validator, released 125A Tester 57 PASS / 0 WARNING / 0 FAIL, all seven timing display controls, real corner zoom, contextual help, UI recall and fresh actual restored window PASS. Not an approved public FINAL release.
 
 ## Latest verified candidate
