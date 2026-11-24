@@ -4,6 +4,7 @@
 #include "vstgui/lib/cdrawcontext.h"
 #include "vstgui/lib/cbitmap.h"
 #include "vstgui/lib/cfont.h"
+#include "vstgui/lib/controls/cknob.h"
 #include "vstgui/uidescription/uiattributes.h"
 #include <array>
 
@@ -74,7 +75,20 @@ public:
     explicit Editor(Steinberg::Vst::EditController* c):AspectRatioVST3Editor(c,"view","chopper.uidesc"){
         setMinZoomFactor(.75);enableTooltips(true);setIdleRate(33);
     }
+    // Linear drag is the primary input, independent of the host preference.
+    int32_t getKnobMode() const override{return VSTGUI::kLinearMode;}
 protected:
+    VSTGUI::CView* verifyView(VSTGUI::CView* view,const VSTGUI::UIAttributes& attrs,const VSTGUI::IUIDescription* desc) override{
+        auto* result=AspectRatioVST3Editor::verifyView(view,attrs,desc);
+        if(auto* knob=dynamic_cast<VSTGUI::CKnobBase*>(result)){
+            // A full LENGTH sweep takes 195 logical pixels: three per step.
+            // The three short note lists and continuous controls use 150 px.
+            knob->setKnobRange(knob->getTag()==103?195.f:150.f);
+            knob->setZoomFactor(5.f);
+            knob->setWantsFocus(true);
+        }
+        return result;
+    }
     bool PLUGIN_API open(void* parent,const VSTGUI::PlatformType& type) override{
         // Fail explicitly rather than presenting a blank or low-resolution editor.
         auto* desc=getUIDescription();

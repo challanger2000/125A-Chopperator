@@ -382,6 +382,12 @@ void clickGui(HWND child,int x,int y){
     SendMessageW(child,WM_LBUTTONDOWN,MK_LBUTTON,MAKELPARAM(x,y));
     SendMessageW(child,WM_LBUTTONUP,0,MAKELPARAM(x,y));pumpGui(60);
 }
+void dragGui(HWND child,int x,int y,int dy){
+    SendMessageW(child,WM_MOUSEMOVE,0,MAKELPARAM(x,y));
+    SendMessageW(child,WM_LBUTTONDOWN,MK_LBUTTON,MAKELPARAM(x,y));
+    SendMessageW(child,WM_MOUSEMOVE,MK_LBUTTON,MAKELPARAM(x,y-dy));
+    SendMessageW(child,WM_LBUTTONUP,0,MAKELPARAM(x,y-dy));pumpGui(60);
+}
 void wheelGui(HWND child,int x,int y){
     SendMessageW(child,WM_MOUSEMOVE,0,MAKELPARAM(x,y));
     POINT pt{x,y};ClientToScreen(child,&pt);
@@ -427,6 +433,28 @@ void guiContract(const VST3::Hosting::Module::Ptr& module,const std::filesystem:
         require(std::abs(n.controller->getParamNormalized(100)-2./6)<1e-8,"one wheel notch next note division");
         require(std::abs(n.controller->getParamNormalized(103)-4./65)<1e-8,"one wheel notch next length");
         pumpGui(700);
+        // The owner has no mouse wheel: prove every LENGTH value can be
+        // reached by left-button movement alone, then reverse the gesture.
+        require(n.controller->setParamNormalized(103,0)==kResultOk,"host length minimum");
+        pumpGui(80);
+        SendMessageW(child,WM_MOUSEMOVE,0,MAKELPARAM(822,314));
+        SendMessageW(child,WM_LBUTTONDOWN,MK_LBUTTON,MAKELPARAM(822,314));
+        for(int i=1;i<=65;++i){
+            SendMessageW(child,WM_MOUSEMOVE,MK_LBUTTON,MAKELPARAM(822,314-3*i));
+            require(std::abs(n.controller->getParamNormalized(103)-double(i)/65)<1e-8,"left drag reaches next length");
+        }
+        for(int i=64;i>=0;--i){
+            SendMessageW(child,WM_MOUSEMOVE,MK_LBUTTON,MAKELPARAM(822,314-3*i));
+            require(std::abs(n.controller->getParamNormalized(103)-double(i)/65)<1e-8,"left drag reverses every length");
+        }
+        SendMessageW(child,WM_LBUTTONUP,0,MAKELPARAM(822,314));pumpGui(80);
+        require(n.controller->setParamNormalized(100,1./6)==kResultOk,"host start before drag");
+        pumpGui(80);dragGui(child,138,314,25);
+        require(std::abs(n.controller->getParamNormalized(100)-2./6)<1e-8,"left drag next note");
+        require(n.controller->setParamNormalized(107,.5)==kResultOk,"host width before drag");
+        pumpGui(80);dragGui(child,404,468,15);
+        require(std::abs(n.controller->getParamNormalized(107)-.6)<1e-5,"left drag continuous width");
+        std::cout<<"NATIVE_LEFT_DRAG_ALL_66_LENGTHS_PASS\n";
         // Actual editor resize negotiation; no claim of Studio Pro support.
         require(view->canResize()==kResultTrue,"editor resizable");
         ViewRect scaled{0,0,720,432};require(view->checkSizeConstraint(&scaled)==kResultOk,"resize constraint");
