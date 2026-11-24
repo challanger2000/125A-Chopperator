@@ -438,9 +438,23 @@ protected:
         if(!std::isfinite(factor)||factor<=0||factor>10000)return Steinberg::kInvalidArgument;
         // Our onSize owns user zoom; the aspect editor's private zoom cache
         // must not reapply an older factor after the host DPI changes.
+        const auto oldScale=getContentScaleFactor();
+        if(factor==oldScale)return Steinberg::kResultTrue;
         const bool wasSyncing=syncing;syncing=true;
-        const auto result=VSTGUI::VST3Editor::setContentScaleFactor(factor);
-        syncing=wasSyncing;return result;
+        contentScaleFactor=factor;
+        if(auto* frame=getFrame()){
+            // The frame restores its transform on host rejection; also
+            // restore our content scale instead of reporting false success.
+            if(!frame->setZoom(getZoomFactor()*factor)){
+                contentScaleFactor=oldScale;syncing=wasSyncing;
+                return Steinberg::kResultFalse;
+            }
+        }else{
+            const auto width=static_cast<Steinberg::int32>(std::lround(960*getZoomFactor()*factor));
+            rect.right=rect.left+width;
+            rect.bottom=rect.top+static_cast<Steinberg::int32>(std::floor(width*.6));
+        }
+        syncing=wasSyncing;return Steinberg::kResultTrue;
     }
 #endif
     bool beforeSizeChange(const VSTGUI::CRect& newSize,const VSTGUI::CRect& oldSize) override{
@@ -455,8 +469,10 @@ protected:
         // the SDK base path without overwriting the saved editor preferences.
         if(!opened||resizing)return VSTGUI::VST3Editor::onSize(r);
         const auto oldZoom=getZoomFactor();
-        const auto factor=std::clamp(r->getWidth()/(960.*getContentScaleFactor()),.75,1.5);
-        if(std::abs(r->getHeight()-r->getWidth()*.6)>1.01)return Steinberg::kResultFalse;
+        const auto scale=getContentScaleFactor();
+        const auto factor=std::clamp(r->getWidth()/(960.*scale),.75,1.5);
+        if(r->getWidth()<std::lround(720*scale)||r->getWidth()>std::lround(1440*scale)||
+           std::abs(r->getHeight()-r->getWidth()*.6)>1.01)return Steinberg::kResultFalse;
         if(std::getenv("CHOPPER_GUI_TRACE"))std::fprintf(stderr,"EDITOR_ACCEPT_SIZE %d x %d zoom=%.9f\n",r->getWidth(),r->getHeight(),factor);
         resizing=true;
         setZoomFactor(factor);
@@ -500,7 +516,7 @@ private:
                     helpOverlay->show(control->getTag(),hovered->getViewSize());
             }else helpOverlay->hide();
         }
-        if(syncing||std::abs(getZoomFactor()-preferences.zoom)<1e-9)return;
+        if(syncing||std::abs(getZoomFactor()-preferences.zoom)*960*getContentScaleFactor()<.51)return;
         const auto width=std::lround(960*preferences.zoom*getContentScaleFactor());
         const auto height=std::floor(width*.6);
         // A peer view may be denied by its own host. Do not overwrite the

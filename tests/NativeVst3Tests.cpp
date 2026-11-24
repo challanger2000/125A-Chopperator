@@ -12,6 +12,7 @@
 #include "base/source/fobject.h"
 #include "pluginterfaces/vst/ivstplugview.h"
 #include "pluginterfaces/gui/iplugview.h"
+#include "pluginterfaces/gui/iplugviewcontentscalesupport.h"
 #define NOMINMAX
 #include <windows.h>
 #include <objbase.h>
@@ -349,8 +350,10 @@ void pumpGui(int ms){
 class GuiFrame final:public FObject, public IPlugFrame {
 public:
     explicit GuiFrame(HWND parent):parent_(parent){}
+    bool deny=false;int requests=0;
     tresult PLUGIN_API resizeView(IPlugView* view,ViewRect* r) override{
         if(!view||!r)return kInvalidArgument;
+        ++requests;if(deny)return kResultFalse;
         RECT outer{0,0,r->getWidth(),r->getHeight()};
         AdjustWindowRectEx(&outer,WS_OVERLAPPEDWINDOW,FALSE,WS_EX_TOOLWINDOW);
         SetWindowPos(parent_,nullptr,0,0,outer.right-outer.left,outer.bottom-outer.top,SWP_NOMOVE|SWP_NOZORDER|SWP_NOACTIVATE);
@@ -363,11 +366,16 @@ public:
     REFCOUNT_METHODS(FObject)
 private: HWND parent_;
 };
-class GuiHandler final:public FObject,public IComponentHandler{
+class GuiHandler final:public FObject,public IComponentHandler,public IComponentHandler2{
 public:
     std::array<int,14> begins{},edits{},ends{};
     std::array<double,14> last{};
     Native* relay=nullptr;
+    int dirtyCalls=0;
+    tresult PLUGIN_API setDirty(TBool state) override{if(state)++dirtyCalls;return kResultOk;}
+    tresult PLUGIN_API requestOpenEditor(FIDString) override{return kResultFalse;}
+    tresult PLUGIN_API startGroupEdit() override{return kResultOk;}
+    tresult PLUGIN_API finishGroupEdit() override{return kResultOk;}
     tresult PLUGIN_API beginEdit(ParamID id) override{if(id<100||id>113)return kInvalidArgument;++begins[id-100];return kResultOk;}
     tresult PLUGIN_API performEdit(ParamID id,ParamValue value) override{if(id<100||id>113||value<0||value>1)return kInvalidArgument;++edits[id-100];last[id-100]=value;
         // Test-host relay of the actual performEdit value into the real
@@ -379,6 +387,7 @@ public:
     OBJ_METHODS(GuiHandler,FObject)
     DEFINE_INTERFACES
         DEF_INTERFACE(IComponentHandler)
+        DEF_INTERFACE(IComponentHandler2)
     END_DEFINE_INTERFACES(FObject)
     REFCOUNT_METHODS(FObject)
 };
@@ -514,6 +523,24 @@ void valueEntryContract(Native& n,GuiHandler& handler,HWND child){
     edit({107,404,509,L"25oops",0},VK_RETURN,false);
     edit({105,252,509,L"+-25%",0},VK_RETURN,false);
     edit({110,860,509,L"5",0},VK_ESCAPE,false);
+    for(bool commit:{true,false}){
+        require(n.controller->setParamNormalized(107,.5)==kResultOk,"text echo baseline");pumpGui(80);
+        SendMessageW(child,WM_LBUTTONDBLCLK,MK_LBUTTON,MAKELPARAM(404,509));
+        SendMessageW(child,WM_LBUTTONUP,0,MAKELPARAM(404,509));pumpGui(80);
+        HWND field=GetFocus();wchar_t cls[64]{};
+        require(field&&field!=child&&GetClassNameW(field,cls,64)&&_wcsicmp(cls,L"Edit")==0,"echo field opens");
+        require(SetWindowTextW(field,L"37.25")!=0,"echo local buffer");
+        SendMessageW(field,EM_SETSEL,2,2);
+        const auto edits=handler.edits;
+        require(n.controller->setParamNormalized(107,.8)==kResultOk,"external automation during edit");pumpGui(80);
+        wchar_t local[32]{};GetWindowTextW(field,local,32);
+        DWORD from=0,to=0;SendMessageW(field,EM_GETSEL,reinterpret_cast<WPARAM>(&from),reinterpret_cast<LPARAM>(&to));
+        require(std::wstring(local)==L"37.25"&&from==2&&to==2,"automation preserves local text and caret");
+        SendMessageW(field,WM_KEYDOWN,commit?VK_RETURN:VK_ESCAPE,1);pumpGui(100);
+        require(std::abs(n.controller->getParamNormalized(107)-(commit?.3725:.8))<1e-9&&
+                handler.edits[7]-edits[7]==(commit?1:0),"text commit/cancel after automation");
+    }
+    std::cout<<"NATIVE_P009_TEXT_AUTOMATION_PASS\n";
     std::cout<<"NATIVE_DOUBLE_CLICK_ALL_10_READOUTS_PASS\n";
 }
 
@@ -924,6 +951,80 @@ void guiContract(const VST3::Hosting::Module::Ptr& module,const std::filesystem:
     if(!previewOnly)std::cout<<"NATIVE_EDITOR_CONTRACT_PASS two attach cycles, 13 hit mappings, three segment edits, discrete wheel steps, resize roundtrip\n";
 }
 
+// Two simultaneous native views, shared recall, real host geometry and DPI.
+void liveUIAudit(const VST3::Hosting::Module::Ptr& module){
+    Native n(module);auto handler=owned(new GuiHandler);
+    require(n.controller->setComponentHandler(handler.get())==kResultOk,"live UI handler");
+    const auto inst=GetModuleHandleW(nullptr);
+    WNDCLASSW wc{};wc.hInstance=inst;wc.lpfnWndProc=DefWindowProcW;wc.lpszClassName=L"ChopperatorLiveAudit";
+    require(RegisterClassW(&wc)!=0,"live UI class");
+    auto a=owned(n.controller->createView(ViewType::kEditor));
+    auto b=owned(n.controller->createView(ViewType::kEditor));
+    FUnknownPtr<IPlugViewContentScaleSupport> dpi(a.get());
+    require(a&&b&&dpi.getInterface(),"two real editors and DPI interface");
+    const auto makeHost=[&](){
+        RECT r{0,0,960,576};AdjustWindowRectEx(&r,WS_OVERLAPPEDWINDOW,FALSE,WS_EX_TOOLWINDOW);
+        HWND w=CreateWindowExW(WS_EX_TOOLWINDOW,wc.lpszClassName,L"Live audit",WS_OVERLAPPEDWINDOW,
+            0,0,r.right-r.left,r.bottom-r.top,nullptr,nullptr,inst,nullptr);
+        require(w!=nullptr,"live HWND");return w;
+    };
+    HWND ha=makeHost(),hb=makeHost();auto fa=owned(new GuiFrame(ha)),fb=owned(new GuiFrame(hb));
+    require(a->setFrame(fa.get())==kResultOk&&a->attached(ha,kPlatformTypeHWND)==kResultOk&&
+        b->setFrame(fb.get())==kResultOk&&b->attached(hb,kPlatformTypeHWND)==kResultOk,"two simultaneous attaches");
+    ShowWindow(ha,SW_SHOWNA);ShowWindow(hb,SW_SHOWNA);pumpGui(150);
+    HWND ca=GetWindow(ha,GW_CHILD),cb=GetWindow(hb,GW_CHILD);
+    require(ca&&cb&&ca!=cb,"distinct native children");
+    const auto geom=[](IPlugView* v,HWND child,int w,int h){
+        ViewRect vr{};RECT cr{};
+        require(v->getSize(&vr)==kResultOk&&GetClientRect(child,&cr)!=0&&vr.getWidth()==w&&
+            vr.getHeight()==h&&cr.right==w&&cr.bottom==h,"live UI actual geometry");
+    };
+    const auto load=[&](double zoom,std::uint32_t help,bool expected=true){
+        MemoryStream state;std::uint32_t tag=0x31554943u,version=1;int32 count=0;
+        require(state.write(&tag,4,&count)==kResultOk&&state.write(&version,4,&count)==kResultOk&&
+            state.write(&zoom,8,&count)==kResultOk&&state.write(&help,4,&count)==kResultOk&&
+            state.seek(0,IBStream::kIBSeekSet)==kResultOk,"live UI fixture");
+        require((n.controller->setState(&state)==kResultOk)==expected,"live UI recall status");pumpGui(100);
+    };
+    const auto saved=[&](double zoom,std::uint32_t help){
+        MemoryStream state;require(n.controller->getState(&state)==kResultOk&&state.getSize()==20,"live UI saved");
+        double z=0;std::uint32_t h=0;std::memcpy(&z,state.getData()+8,8);std::memcpy(&h,state.getData()+16,4);
+        require(z==zoom&&h==help,"live UI authoritative saved preferences");
+    };
+    geom(a.get(),ca,960,576);geom(b.get(),cb,960,576);
+    load(1.25,1);geom(a.get(),ca,1200,720);geom(b.get(),cb,1200,720);saved(1.25,1);
+    require(handler->dirtyCalls==0,"recall does not dirty project");
+    load(1.75,0,false);geom(a.get(),ca,1200,720);geom(b.get(),cb,1200,720);saved(1.25,1);
+    require(dpi->setContentScaleFactor(1.5f)==kResultOk,"live DPI 150");pumpGui(100);
+    geom(a.get(),ca,1800,1080);geom(b.get(),cb,1200,720);saved(1.25,1);
+    FUnknownPtr<IParameterFinder> finder(a.get());ParamID id=0;
+    require(finder.getInterface()&&finder->findParameter(259,589,id)==kResultTrue&&id==100,"DPI scaled hit mapping");
+    require(dpi->setContentScaleFactor(1.f)==kResultOk,"DPI return");pumpGui(100);geom(a.get(),ca,1200,720);
+    fa->deny=true;const auto denied=fa->requests;
+    require(dpi->setContentScaleFactor(1.5f)!=kResultOk&&fa->requests>denied,"DPI host rejection");
+    pumpGui(100);geom(a.get(),ca,1200,720);saved(1.25,1);
+    fa->deny=false;require(dpi->setContentScaleFactor(1.5f)==kResultOk,"DPI recovers");pumpGui(80);
+    geom(a.get(),ca,1800,1080);
+    require(dpi->setContentScaleFactor(1.f)==kResultOk,"DPI reset");pumpGui(80);geom(a.get(),ca,1200,720);
+    fb->deny=true;load(1.,0);geom(a.get(),ca,960,576);geom(b.get(),cb,1200,720);saved(1.,0);
+    fb->deny=false;load(1.,0);geom(b.get(),cb,960,576);
+    require(handler->dirtyCalls==0,"no dirty on recall/DPI/rejection");
+    clickGui(cb,508,32);saved(1.,1);require(handler->dirtyCalls==1,"peer help dirty notification");
+    clickGui(ca,508,32);saved(1.,0);require(handler->dirtyCalls==2,"shared peer help off");
+    ViewRect zoom{0,0,1200,720};
+    require(fa->resizeView(a.get(),&zoom)==kResultOk,"user resize");pumpGui(100);
+    geom(a.get(),ca,1200,720);geom(b.get(),cb,1200,720);saved(1.25,0);
+    require(handler->dirtyCalls==3,"user zoom dirty exactly once");
+    require(a->removed()==kResultOk&&a->setFrame(nullptr)==kResultOk,"first close");
+    DestroyWindow(ha);pumpGui(80);require(!IsWindow(ca)&&IsWindow(cb),"only first child closed");
+    load(1.,1);geom(b.get(),cb,960,576);saved(1.,1);
+    require(handler->dirtyCalls==3,"surviving view recall not dirty");
+    require(b->removed()==kResultOk&&b->setFrame(nullptr)==kResultOk,"second close");DestroyWindow(hb);
+    require(n.controller->setComponentHandler(nullptr)==kResultOk,"clear live handler");
+    UnregisterClassW(wc.lpszClassName,inst);
+    std::cout<<"NATIVE_P009_LIVE_RECALL_PEER_DPI_DIRTY_PASS\n";
+}
+
 // P009 native counterexamples: use actual loaded processor/controller.
 class FaultStream final:public MemoryStream {
 public:
@@ -1019,7 +1120,7 @@ int main(int argc,char** argv){
     if(!module){std::cerr<<error<<'\n';return 1;}
     HostApplication host;PluginContextFactory::instance().setPluginContext(&host);
     module->getFactory().setHostContext(&host);
-    if(argc==4){if(std::string(argv[2])=="--editor"||std::string(argv[2])=="--preview"){guiContract(module,argv[3],std::string(argv[2])=="--preview");return 0;}require(std::string(argv[2])=="--programme","programme argument");programme(module,argv[3]);return 0;}
+    if(argc==4){if(std::string(argv[2])=="--editor"||std::string(argv[2])=="--preview"){guiContract(module,argv[3],std::string(argv[2])=="--preview");if(std::string(argv[2])=="--editor")liveUIAudit(module);return 0;}require(std::string(argv[2])=="--programme","programme argument");programme(module,argv[3]);return 0;}
     if(argc==3){require(std::string(argv[2])=="--negative-spectrum","negative control argument");spectral(module,true);return 2;}
     auditRegressions(module);
     waveformContracts(module);spectral(module,false);realtimeProbe(module);
