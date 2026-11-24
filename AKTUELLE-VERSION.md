@@ -1,3 +1,7 @@
+# P009 — second targeted M01/M03 follow-up candidate
+
+Independent audit 3a1773f4e6ff3b3e1b79194d8442040141cb14b4 on a276f022: M02 stock GCC 14.2 Release 5/5 PASS; original M01 rounding and M03 frame-stack fixes PASS within tested boundaries. Two follow-up findings remain. Same-pixel recall now applies the exact logical zoom locally without host resize; synchronous DPI detach now completes SDK close before removed returns, with no active frame operation spanning the external resize callback. Native regressions check both peers across 1.0008/1.0 recall at unchanged 960x576 and subsequent 200% DPI (1921 vs 1920), immediate child destruction at removed return and actual parent destruction within callback. Existing tests retained. New build NOT RUN. DSP and Glass-V2 design untouched; no release promotion.
+
 # P009 — M01/M02/M03 regression gates passed
 
 Exact source a276f0228acf58230ee5ca5c48267f062b5c79c1, run [45506553532](https://github.com/challanger2000/125A-Chopperator/actions/runs/45506553532): SUCCESS, portable job 138843140206 (GNU 13.3.0, stock Release build, 5/5 CTests), Windows job 138843229177 (MSVC 19.44, 5/5 CTests, 47/47 validator, 57 PASS / 0 WARNING / 0 FAIL tester, Lab TECHNICAL_BASELINE_PASS and scoped REQUIRED_COVERAGE_COMPLETE).

@@ -454,9 +454,9 @@ protected:
     }
     void PLUGIN_API close() override{
         preferences.remove(this);opened=false;hovered=nullptr;helpOverlay=nullptr;helpButton=nullptr;
-        // A synchronous removed() may arrive inside the DPI request.
-        // Finish the active stack before the SDK releases its frame.
-        if(dpiInFlight){deferredClose=true;return;}
+        // The outer DPI operation holds the view, but no frame operation
+        // spans the host resizeView call. Complete the detach synchronously:
+        // the host may destroy the parent as soon as removed returns.
         AspectRatioVST3Editor::close();
     }
 #ifdef VST3_CONTENT_SCALE_SUPPORT
@@ -477,18 +477,20 @@ protected:
         // The host can close the view synchronously; no SDK frame operation
         // is suspended across that external call. onSize applies the scale
         // only after an exact acknowledgement, with resize recursion disabled.
-        dpiInFlight=true;dpiAcknowledged=false;deferredClose=false;
+        dpiInFlight=true;dpiAcknowledged=false;
         syncing=true;syncTargetZoom=userZoom;contentScaleFactor=factor;
         Steinberg::ViewRect requested{0,0,pixels.width,pixels.height};
         const bool accepted=(rect.getWidth()==pixels.width&&rect.getHeight()==pixels.height)
             ?onSize(&requested)==Steinberg::kResultTrue
             :requestResize(VSTGUI::CPoint(pixels.width,pixels.height));
-        const bool success=accepted&&dpiAcknowledged&&opened&&!deferredClose;
+        // The host may already have destroyed the child AND parent.
+        // Never start a frame operation after synchronous removal.
+        const bool success=accepted&&dpiAcknowledged&&opened;
         if(!success){
             contentScaleFactor=oldScale;
             // A host that acknowledged and then rejected is contradictory,
             // but restore our own frame/rect without another host request.
-            if(dpiAcknowledged&&opened&&!deferredClose){
+            if(dpiAcknowledged&&opened){
                 const auto prior=editorPixels(userZoom,oldScale);
                 Steinberg::ViewRect previous{0,0,prior.width,prior.height};
                 resizing=true;
@@ -498,23 +500,19 @@ protected:
             }
         }
         dpiInFlight=false;syncing=false;
-        if(deferredClose){
-            deferredClose=false;
-            AspectRatioVST3Editor::close();
-        }
         return success?Steinberg::kResultTrue:Steinberg::kResultFalse;
     }
 #endif
     bool beforeSizeChange(const VSTGUI::CRect& newSize,const VSTGUI::CRect& oldSize) override{
         // The host already accepted this size via onSize. Do not ask it
         // again while applying its acknowledgement to the native frame.
-        if(deferredClose)return false;
+        if(dpiInFlight&&!opened)return false;
         if(resizing)return true;
         return VSTGUI::VST3Editor::beforeSizeChange(newSize,oldSize);
     }
     Steinberg::tresult PLUGIN_API onSize(Steinberg::ViewRect* r) override{
         if(!r)return Steinberg::kInvalidArgument;
-        if(deferredClose)return Steinberg::kResultFalse;
+        if(dpiInFlight&&!opened)return Steinberg::kResultFalse;
         // On initial attachment and reentrant host acknowledgement, use
         // the SDK base path without overwriting the saved editor preferences.
         if(!opened||resizing)return VSTGUI::VST3Editor::onSize(r);
@@ -535,7 +533,7 @@ protected:
         // apply the new transform here, not on the outer host callback stack.
         if(dpiInFlight){
             auto* frame=getFrame();
-            if(!frame||!frame->setZoom(factor*scale)||deferredClose){
+            if(!frame||!frame->setZoom(factor*scale)){
                 resizing=false;return Steinberg::kResultFalse;
             }
         }
@@ -591,7 +589,15 @@ private:
         // A peer view may be denied by its own host. Do not overwrite the
         // shared desired zoom or claim that the rejected geometry applied.
         syncing=true;
-        requestResize(VSTGUI::CPoint(pixels.width,pixels.height));
+        if(rect.getWidth()==pixels.width&&rect.getHeight()==pixels.height){
+            // VST3 permits the host to omit onSize for unchanged dimensions.
+            // Commit logical zoom and transform locally via the same
+            // exact-size acknowledgement path, without notifying the host.
+            Steinberg::ViewRect same=rect;
+            onSize(&same);
+        }else{
+            requestResize(VSTGUI::CPoint(pixels.width,pixels.height));
+        }
         syncing=false;
     }
     EditorPreferences& preferences;
@@ -599,7 +605,7 @@ private:
     HelpButton* helpButton=nullptr;
     VSTGUI::CView* hovered=nullptr;
     bool opened=false,resizing=false,syncing=false;
-    bool dpiInFlight=false,dpiAcknowledged=false,deferredClose=false;
+    bool dpiInFlight=false,dpiAcknowledged=false;
     double syncTargetZoom=1.;
 };
 }

@@ -396,12 +396,17 @@ void pumpGui(int ms){
 class GuiFrame final:public FObject, public IPlugFrame {
 public:
     explicit GuiFrame(HWND parent):parent_(parent){}
-    bool deny=false;int requests=0;
+    bool deny=false,omitSameSizeAck=false;int requests=0,omittedAcks=0;
     std::function<tresult(IPlugView*,ViewRect*)> intercept;
     tresult PLUGIN_API resizeView(IPlugView* view,ViewRect* r) override{
         if(!view||!r)return kInvalidArgument;
         ++requests;if(deny)return kResultFalse;
         if(intercept){auto callback=std::move(intercept);intercept={};return callback(view,r);}
+        ViewRect current{};
+        if(omitSameSizeAck&&view->getSize(&current)==kResultOk&&
+           current.getWidth()==r->getWidth()&&current.getHeight()==r->getHeight()){
+            ++omittedAcks;return kResultOk;
+        }
         RECT outer{0,0,r->getWidth(),r->getHeight()};
         AdjustWindowRectEx(&outer,WS_OVERLAPPEDWINDOW,FALSE,WS_EX_TOOLWINDOW);
         SetWindowPos(parent_,nullptr,0,0,outer.right-outer.left,outer.bottom-outer.top,SWP_NOMOVE|SWP_NOZORDER|SWP_NOACTIVATE);
@@ -1205,6 +1210,31 @@ void liveUIAudit(const VST3::Hosting::Module::Ptr& module){
     geom(a.get(),ca,960,576);saved(1.,0);
     require(handler->dirtyCalls==3,"M01 no dirty");
     std::cout<<"NATIVE_P009_FRACTIONAL_RECALL_M01_PASS\n";
+    // The host is allowed to omit onSize for a same-pixel recall.
+    // Both views must adopt the exact zoom, even without any host request.
+    fa->omitSameSizeAck=true;fb->omitSameSizeAck=true;
+    const auto sameRequestsA=fa->requests,sameRequestsB=fb->requests;
+    load(1.0008,0);geom(a.get(),ca,960,576);geom(b.get(),cb,960,576);saved(1.0008,0);
+    require(fa->requests==sameRequestsA&&fb->requests==sameRequestsB,"same-pixel recall is local");
+    // Verify both independently via their next physical DPI request.
+    FUnknownPtr<IPlugViewContentScaleSupport> peerDpi(b.get());
+    require(peerDpi.getInterface()!=nullptr,"same-pixel peer DPI interface");
+    require(dpi->setContentScaleFactor(2.f)==kResultOk&&
+        peerDpi->setContentScaleFactor(2.f)==kResultOk,"same-pixel recall next DPI");
+    pumpGui(80);geom(a.get(),ca,1921,1152);geom(b.get(),cb,1921,1152);saved(1.0008,0);
+    // Reverse same-pixel recall at 100% DPI and verify zoom becomes 1.
+    require(dpi->setContentScaleFactor(1.f)==kResultOk&&
+        peerDpi->setContentScaleFactor(1.f)==kResultOk,"same-pixel DPI return");
+    pumpGui(80);load(1.,0);
+    require(dpi->setContentScaleFactor(2.f)==kResultOk&&
+        peerDpi->setContentScaleFactor(2.f)==kResultOk,"same-pixel reverse next DPI");
+    pumpGui(80);geom(a.get(),ca,1920,1152);geom(b.get(),cb,1920,1152);saved(1.,0);
+    require(dpi->setContentScaleFactor(1.f)==kResultOk&&
+        peerDpi->setContentScaleFactor(1.f)==kResultOk,"same-pixel final DPI return");
+    pumpGui(80);geom(a.get(),ca,960,576);geom(b.get(),cb,960,576);
+    fa->omitSameSizeAck=false;fb->omitSameSizeAck=false;
+    require(handler->dirtyCalls==3,"same-pixel recall not dirty");
+    std::cout<<"NATIVE_P009_SAME_PIXEL_RECALL_NO_ACK_PASS\n";
     load(1.25,0);
     const auto reopenPeer=[&](){
         DestroyWindow(hb);hb=makeHost();fb=owned(new GuiFrame(hb));
@@ -1252,13 +1282,15 @@ void liveUIAudit(const VST3::Hosting::Module::Ptr& module){
     require(ca!=nullptr,"M03 native child");geom(a.get(),ca,960,576);
     bool detached=false;
     fa->intercept=[&](IPlugView* v,ViewRect*){
-        require(v==a.get()&&v->removed()==kResultOk&&v->setFrame(nullptr)==kResultOk,"M03 synchronous DPI detach");
+        require(v==a.get()&&v->removed()==kResultOk,"M03 synchronous DPI detach");
+        require(!IsWindow(ca)&&IsWindow(ha),"M03 child gone at removed return");
+        require(v->setFrame(nullptr)==kResultOk,"M03 host frame cleared");
+        require(DestroyWindow(ha)!=0&&!IsWindow(ha),"M03 parent destroyed inside host resize");
         detached=true;
         return kResultFalse;
     };
     require(detachDpi->setContentScaleFactor(1.37f)!=kResultOk&&detached,"M03 DPI returns rejection after detach");
-    pumpGui(80);require(!IsWindow(ca)&&IsWindow(cb),"M03 child destroyed, peer survives");
-    DestroyWindow(ha);
+    pumpGui(80);require(!IsWindow(ca)&&!IsWindow(ha)&&IsWindow(cb),"M03 parent and child gone, peer survives");
     load(1.25,1);geom(b.get(),cb,1200,720);saved(1.25,1);
     load(1.,1);geom(b.get(),cb,960,576);saved(1.,1);
     require(handler->dirtyCalls==4,"surviving view recall not dirty");
