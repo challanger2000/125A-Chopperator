@@ -460,9 +460,13 @@ void guiContract(const VST3::Hosting::Module::Ptr& module,const std::filesystem:
         ViewRect scaled{0,0,720,432};require(view->checkSizeConstraint(&scaled)==kResultOk,"resize constraint");
         require(scaled.getWidth()==720&&scaled.getHeight()==432,"aspect resize 75%");
         require(frame->resizeView(view.get(),&scaled)==kResultOk,"resize editor");pumpGui(100);
-        require(view->getSize(&size)==kResultOk&&size.getWidth()==720&&size.getHeight()==432,"actual resized geometry");
+        require(view->getSize(&size)==kResultOk,"query resized geometry");
+        RECT childRect{};require(GetClientRect(child,&childRect)!=0,"query resized HWND");
+        std::cout<<"NATIVE_RESIZE actual="<<size.getWidth()<<"x"<<size.getHeight()<<" child="<<childRect.right<<"x"<<childRect.bottom<<"\n";
+        require(size.getWidth()==720&&size.getHeight()==432&&childRect.right==720&&childRect.bottom==432,"actual resized geometry");
         ViewRect original{0,0,960,576};require(view->checkSizeConstraint(&original)==kResultOk&&frame->resizeView(view.get(),&original)==kResultOk,"resize restore");pumpGui(100);
         require(view->getSize(&size)==kResultOk&&size.getWidth()==960&&size.getHeight()==576,"restored geometry");
+        require(GetClientRect(child,&childRect)!=0&&childRect.right==960&&childRect.bottom==576,"restored child geometry");
         // Optional actual screen evidence; capture failure is not silently called a screenshot.
         if(cycle==0){
             RECT r{};GetClientRect(child,&r);

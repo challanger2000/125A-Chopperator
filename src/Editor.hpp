@@ -104,6 +104,15 @@ protected:
         if(!logo||!logo->isLoaded()||logo->getWidth()!=84||logo->getHeight()!=42)return false;
         return AspectRatioVST3Editor::open(parent,type);
     }
+    Steinberg::tresult PLUGIN_API onSize(Steinberg::ViewRect* r) override{
+        if(!r)return Steinberg::kInvalidArgument;
+        // SDK AspectRatioVST3Editor applies zoom but does not update the
+        // CPluginView rectangle. Forward the accepted geometry to the
+        // standard VST3Editor path as well; it handles resize reentry.
+        const auto result=AspectRatioVST3Editor::onSize(r);
+        if(result!=Steinberg::kResultTrue)return result;
+        return VSTGUI::VST3Editor::onSize(r);
+    }
     Steinberg::tresult PLUGIN_API checkSizeConstraint(Steinberg::ViewRect* r) override{
         if(!r)return Steinberg::kInvalidArgument;
         const auto maxWidth=static_cast<Steinberg::int32>(std::lround(1440*getContentScaleFactor()));

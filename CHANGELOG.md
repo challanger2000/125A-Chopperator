@@ -33,3 +33,4 @@
 - P007 resource-copy correction for Windows package names with spaces, native editor host interaction gate.
 - P007 SDK audit: correct normalized discrete wheel increments and resource filename scale suffixes; verify all four actual loaded bitmap resolutions on attach; max editor scale and native wheel checks.
 - Primary linear left-drag independent of DAW knob mode; explicit 66-length bidirectional native drag oracle. Mouse wheel optional.
+- P007 resize gate found a stale reported rectangle; forward accepted aspect resize through SDK base and check native child geometry.
