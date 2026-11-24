@@ -1,0 +1,6 @@
+# Programme fixture acquisition
+The three pinned original FLAC samples are from FreePats CC0 libraries. Two electric guitar notes are real DI recordings subsequently amp/effects processed by the source author. E2 and B3 may form a constructed E-fifth interval, but are not a recorded simultaneous power chord. Pad C4 is a rendered ZynAddSubFX/Yoshimi Sweep Pad.
+- Guitar source: https://github.com/freepats/electric-guitar-FSBS-dist2/tree/21261b8bcb02d1cbf52dc02f1b1636df52d4a947
+- Pad source: https://github.com/freepats/sweep-pad/tree/ed3e294fcec8c3ea3ec84471f8c7a75bc09eba04
+Run tools/prepare_programme_fixtures.py with an explicit output directory and ffmpeg on PATH. Download only exact pinned bytes; verify Git blob hashes before decoding. Record source SHA256, decoded PCM SHA256, ffmpeg version and peak. Do not normalize input or ship fixture samples in customer packages.
+Status: acquisition script authored, network and decoding execution NOT RUN. The original local download path was unavailable. These sources and the script do not establish real-audio or listening PASS. Next: execute on authorized CI, pin the resulting manifests, use actual VST3 native audio tests and evaluate musical output separately.
