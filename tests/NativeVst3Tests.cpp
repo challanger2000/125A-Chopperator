@@ -14,6 +14,7 @@
 #include "pluginterfaces/gui/iplugview.h"
 #define NOMINMAX
 #include <windows.h>
+#include <commctrl.h>
 #include <objbase.h>
 #include <cstdint>
 #include <algorithm>
@@ -515,6 +516,57 @@ void previewContract(Native& n,HWND child){
     std::cout<<"NATIVE_TIMING_DISPLAY_ALL_7_REACTIVE_PASS\n";
 }
 
+
+// VSTGUI's pinned Win32 backend exposes real tooltip common controls.
+// Inspect only the live window for the requested tool on this UI thread.
+struct TooltipProbe {
+    HWND child;
+    std::wstring text;
+    bool visible=false;
+};
+BOOL CALLBACK collectTooltip(HWND window,LPARAM arg){
+    auto& probe=*reinterpret_cast<TooltipProbe*>(arg);
+    wchar_t cls[64]{};
+    if(!GetClassNameW(window,cls,64)||_wcsicmp(cls,TOOLTIPS_CLASSW)!=0||!IsWindowVisible(window))return TRUE;
+    wchar_t buf[512]{};
+    TTTOOLINFOW info{};info.cbSize=sizeof(info);info.hwnd=probe.child;info.uId=0;info.lpszText=buf;
+    SendMessageW(window,TTM_GETTEXTW,512,reinterpret_cast<LPARAM>(&info));
+    if(buf[0]){probe.visible=true;probe.text=buf;return FALSE;}
+    return TRUE;
+}
+TooltipProbe tooltipProbe(HWND child){
+    TooltipProbe p{child};EnumThreadWindows(GetCurrentThreadId(),collectTooltip,reinterpret_cast<LPARAM>(&p));return p;
+}
+void helpContract(HWND host,HWND child){
+    SetWindowPos(host,HWND_TOPMOST,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE);
+    SetForegroundWindow(host);pumpGui(100);
+    POINT old{};require(GetCursorPos(&old)!=0,"help save cursor");
+    const auto hover=[&](int x,int y,int delay){
+        POINT p{x,y};require(ClientToScreen(child,&p)!=0&&SetCursorPos(p.x,p.y)!=0,"help hover real cursor");
+        pumpGui(delay);
+    };
+    const auto click=[&](){
+        INPUT press[2]{};press[0].type=press[1].type=INPUT_MOUSE;press[0].mi.dwFlags=MOUSEEVENTF_LEFTDOWN;press[1].mi.dwFlags=MOUSEEVENTF_LEFTUP;
+        require(SendInput(2,press,sizeof(INPUT))==2,"help real mouse click");pumpGui(100);
+    };
+    // Default OFF, then actual ? click, two different contextual tooltips,
+    // and OFF again. Neither state is inferred from the serialized flag.
+    hover(24,60,100);hover(138,314,1250);
+    require(!tooltipProbe(child).visible,"help default off hides mouseover");
+    hover(508,32,100);click();
+    hover(138,314,1250);
+    auto first=tooltipProbe(child);
+    require(first.visible&&first.text.find(L"START: initial rhythmic note division.")!=std::wstring::npos,"START visible contextual tooltip");
+    hover(24,60,350);hover(404,468,1250);
+    auto second=tooltipProbe(child);
+    require(second.visible&&second.text.find(L"WIDTH: open fraction")!=std::wstring::npos,"WIDTH visible contextual tooltip");
+    hover(508,32,100);click();
+    hover(138,314,1250);
+    require(!tooltipProbe(child).visible,"help disabled hides mouseover");
+    SetCursorPos(old.x,old.y);pumpGui(80);
+    std::cout<<"NATIVE_HELP_MOUSEOVER_ON_OFF_PASS\n";
+}
+
 void guiContract(const VST3::Hosting::Module::Ptr& module,const std::filesystem::path& folder,bool previewOnly=false){
     Native n(module);auto handler=owned(new GuiHandler);
     require(n.controller->setComponentHandler(handler.get())==kResultOk,"gui handler");
@@ -687,6 +739,7 @@ void guiContract(const VST3::Hosting::Module::Ptr& module,const std::filesystem:
             if(bitmap)DeleteObject(bitmap);DeleteDC(dc);ReleaseDC(child,screen);
         }
         if(cycle==1){
+            helpContract(host,child);
             // Save a nondefault UI state through the actual editor and VST3
             // controller, then prove a fresh instance recalls it pre-attach.
             clickGui(child,508,32);
@@ -712,7 +765,23 @@ void guiContract(const VST3::Hosting::Module::Ptr& module,const std::filesystem:
             }
             auto sameInstance=owned(n.controller->createView(ViewType::kEditor));
             require(sameInstance&&sameInstance->getSize(&recalledSize)==kResultOk&&recalledSize.getWidth()==1200,"editor reopen retains zoom");
+            // Prove the restored editor opens at the persisted size, not
+            // merely that getSize reports the requested dimensions.
+            RECT recalledOuter{0,0,1200,720};AdjustWindowRectEx(&recalledOuter,WS_OVERLAPPEDWINDOW,FALSE,WS_EX_TOOLWINDOW);
+            HWND recalledHost=CreateWindowExW(WS_EX_TOOLWINDOW,wc.lpszClassName,L"Chopperator recall QA",WS_OVERLAPPEDWINDOW,
+                0,0,recalledOuter.right-recalledOuter.left,recalledOuter.bottom-recalledOuter.top,nullptr,nullptr,inst,nullptr);
+            require(recalledHost!=nullptr,"fresh recall host HWND");
+            auto recalledFrame=owned(new GuiFrame(recalledHost));
+            require(recalled->setFrame(recalledFrame.get())==kResultOk&&recalled->attached(recalledHost,kPlatformTypeHWND)==kResultOk,"fresh recalled editor attach");
+            ShowWindow(recalledHost,SW_SHOWNA);UpdateWindow(recalledHost);pumpGui(150);
+            HWND recalledChild=GetWindow(recalledHost,GW_CHILD);RECT actualRecall{};
+            require(recalledChild&&GetClientRect(recalledChild,&actualRecall)!=0&&actualRecall.right==1200&&actualRecall.bottom==720,"fresh recalled native dimensions");
+            FUnknownPtr<IParameterFinder> recalledFinder(recalled.get());ParamID recalledId=0;
+            require(recalledFinder.getInterface()&&recalledFinder->findParameter(173,393,recalledId)==kResultTrue&&recalledId==100,"fresh recalled scaled control mapping");
+            require(recalled->removed()==kResultOk&&recalled->setFrame(nullptr)==kResultOk,"fresh recalled editor detach");
+            DestroyWindow(recalledHost);pumpGui(50);
             std::cout<<"NATIVE_UI_STATE_RECALL_PASS\n";
+            std::cout<<"NATIVE_UI_RECALLED_WINDOW_PASS\n";
         }
         require(view->removed()==kResultOk&&view->setFrame(nullptr)==kResultOk,"editor removal");DestroyWindow(host);pumpGui(50);
     }

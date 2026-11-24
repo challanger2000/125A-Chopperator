@@ -46,3 +46,6 @@ Runs 45314685057/45314850044 fail reactive preview after START drag despite comp
 Run 45415026213: independent composed-pixel preview gate passes all seven left-drag settings, zero stable pixel mismatches; prior child DC method returned stale image. Editor gate fails first corner drag intermediate zoom. New fix/diagnostics pending; no Studio Pro acceptance.
 
 45416468673 confirms responsive composed-pixel preview again. Grip reached requested 1115x669, then test's fake WM_MOUSEMOVE disagreed with real cursor after window resize. Real desktop pointer/button gesture fixture replaces synthetic grip movement; no reduced geometry gate. New Windows result pending.
+
+## Verified P008 full workflow 45417400060
+Exact commit b6e9fccce05cd5bcf82b590451bc84226cd4e8e3: 4/4 CTests, 47/47 validator, released tester 57/0/0, all-seven timing diagram reactive oracle, 2x actual corner gestures through three intermediate sizes, scaled hit mapping, saved nondefault zoom/help payload, fresh pre-attach recall, component-state independence and truncated state rollback PASS. Six programme checks PASS. Adds real visible tooltip toggle and fresh attached native recall geometry gates; not yet executed. All remaining full audit, DAW and listening gates still apply.
