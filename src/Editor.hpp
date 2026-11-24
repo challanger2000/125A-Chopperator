@@ -1,6 +1,7 @@
 #pragma once
 #include "Parameters.hpp"
 #include "EditorPreferences.hpp"
+#include "EditorGeometry.hpp"
 #include "vstgui/plugin-bindings/vst3editor.h"
 #include "vstgui/lib/cdrawcontext.h"
 #include "vstgui/lib/cgradient.h"
@@ -365,13 +366,13 @@ public:
     explicit Editor(Steinberg::Vst::EditController* c,EditorPreferences& p):AspectRatioVST3Editor(c,"view","chopper.uidesc"),preferences(p){
         setMinZoomFactor(.75);enableTooltips(false);
         setZoomFactor(p.zoom);
-        rect.right=static_cast<Steinberg::int32>(std::lround(960*p.zoom));
-        rect.bottom=static_cast<Steinberg::int32>(std::floor(rect.right*.6));
+        const auto pixels=editorPixels(p.zoom,1.);
+        rect.right=pixels.width;rect.bottom=pixels.height;
     }
     // Linear drag is the primary input, independent of the host preference.
     int32_t getKnobMode() const override{return VSTGUI::kLinearMode;}
     Steinberg::tresult PLUGIN_API attached(void* parent,Steinberg::FIDString type) override{
-        if(!parent||!type||opened||isPlatformTypeSupported(type)!=Steinberg::kResultTrue)
+        if(!parent||!type||opened||dpiInFlight||isPlatformTypeSupported(type)!=Steinberg::kResultTrue)
             return Steinberg::kResultFalse;
         // The pinned SDK's VSTGUIEditor::attached returns EditorView::attached
         // even when virtual open() returns false. Reject failed resource
@@ -453,65 +454,107 @@ protected:
     }
     void PLUGIN_API close() override{
         preferences.remove(this);opened=false;hovered=nullptr;helpOverlay=nullptr;helpButton=nullptr;
+        // A synchronous removed() may arrive inside the DPI request.
+        // Finish the active stack before the SDK releases its frame.
+        if(dpiInFlight){deferredClose=true;return;}
         AspectRatioVST3Editor::close();
     }
 #ifdef VST3_CONTENT_SCALE_SUPPORT
     Steinberg::tresult PLUGIN_API setContentScaleFactor(ScaleFactor factor) override{
         if(!std::isfinite(factor)||factor<=0||factor>10000)return Steinberg::kInvalidArgument;
-        // Our onSize owns user zoom; the aspect editor's private zoom cache
-        // must not reapply an older factor after the host DPI changes.
+        if(dpiInFlight||resizing||syncing)return Steinberg::kResultFalse;
+        Steinberg::IPtr<Steinberg::IPlugView> keep(this);
         const auto oldScale=getContentScaleFactor();
         if(factor==oldScale)return Steinberg::kResultTrue;
-        const bool wasSyncing=syncing;syncing=true;
-        contentScaleFactor=factor;
-        if(auto* frame=getFrame()){
-            // The frame restores its transform on host rejection; also
-            // restore our content scale instead of reporting false success.
-            if(!frame->setZoom(getZoomFactor()*factor)){
-                contentScaleFactor=oldScale;syncing=wasSyncing;
-                return Steinberg::kResultFalse;
-            }
-        }else{
-            const auto width=static_cast<Steinberg::int32>(std::floor(960*getZoomFactor()*factor));
-            rect.right=rect.left+width;
-            rect.bottom=rect.top+static_cast<Steinberg::int32>(std::floor(width*.6));
+        const auto userZoom=getZoomFactor();
+        const auto pixels=editorPixels(userZoom,factor);
+        if(!getFrame()){
+            contentScaleFactor=factor;
+            rect.right=rect.left+pixels.width;rect.bottom=rect.top+pixels.height;
+            return Steinberg::kResultTrue;
         }
-        syncing=wasSyncing;return Steinberg::kResultTrue;
+        // Negotiate the canonical pixel size BEFORE entering CFrame::setZoom.
+        // The host can close the view synchronously; no SDK frame operation
+        // is suspended across that external call. onSize applies the scale
+        // only after an exact acknowledgement, with resize recursion disabled.
+        dpiInFlight=true;dpiAcknowledged=false;deferredClose=false;
+        syncing=true;syncTargetZoom=userZoom;contentScaleFactor=factor;
+        Steinberg::ViewRect requested{0,0,pixels.width,pixels.height};
+        const bool accepted=(rect.getWidth()==pixels.width&&rect.getHeight()==pixels.height)
+            ?onSize(&requested)==Steinberg::kResultTrue
+            :requestResize(VSTGUI::CPoint(pixels.width,pixels.height));
+        const bool success=accepted&&dpiAcknowledged&&opened&&!deferredClose;
+        if(!success){
+            contentScaleFactor=oldScale;
+            // A host that acknowledged and then rejected is contradictory,
+            // but restore our own frame/rect without another host request.
+            if(dpiAcknowledged&&opened&&!deferredClose){
+                const auto prior=editorPixels(userZoom,oldScale);
+                Steinberg::ViewRect previous{0,0,prior.width,prior.height};
+                resizing=true;
+                if(auto* frame=getFrame())frame->setZoom(userZoom*oldScale);
+                VSTGUI::VST3Editor::onSize(&previous);
+                resizing=false;
+            }
+        }
+        dpiInFlight=false;syncing=false;
+        if(deferredClose){
+            deferredClose=false;
+            AspectRatioVST3Editor::close();
+        }
+        return success?Steinberg::kResultTrue:Steinberg::kResultFalse;
     }
 #endif
     bool beforeSizeChange(const VSTGUI::CRect& newSize,const VSTGUI::CRect& oldSize) override{
         // The host already accepted this size via onSize. Do not ask it
         // again while applying its acknowledgement to the native frame.
+        if(deferredClose)return false;
         if(resizing)return true;
         return VSTGUI::VST3Editor::beforeSizeChange(newSize,oldSize);
     }
     Steinberg::tresult PLUGIN_API onSize(Steinberg::ViewRect* r) override{
         if(!r)return Steinberg::kInvalidArgument;
+        if(deferredClose)return Steinberg::kResultFalse;
         // On initial attachment and reentrant host acknowledgement, use
         // the SDK base path without overwriting the saved editor preferences.
         if(!opened||resizing)return VSTGUI::VST3Editor::onSize(r);
         Steinberg::IPtr<Steinberg::IPlugView> keep(this);
         const auto oldZoom=getZoomFactor();
         const auto scale=getContentScaleFactor();
-        // A DPI-only acknowledgement must not quantize logical user zoom.
-        const auto factor=syncing&&std::abs(r->getWidth()-960.*oldZoom*scale)<1.
-            ?oldZoom:std::clamp(r->getWidth()/(960.*scale),.75,1.5);
-        if(r->getWidth()<std::floor(720*scale)||r->getWidth()>std::floor(1440*scale)||
-           std::abs(r->getHeight()-r->getWidth()*.6)>1.01)return Steinberg::kResultFalse;
+        const auto target=editorPixels(syncTargetZoom,scale);
+        const bool matchesTarget=syncing&&r->getWidth()==target.width&&r->getHeight()==target.height;
+        if(dpiInFlight&&!matchesTarget)return Steinberg::kResultFalse;
+        if(!editorSizeValid(r->getWidth(),r->getHeight(),scale))return Steinberg::kResultFalse;
+        // Preserve exact logical zoom for our own canonical requests; do
+        // not reconstruct it from a quantized physical pixel width.
+        const auto factor=matchesTarget?syncTargetZoom:editorZoomForWidth(r->getWidth(),scale);
         if(std::getenv("CHOPPER_GUI_TRACE"))std::fprintf(stderr,"EDITOR_ACCEPT_SIZE %d x %d zoom=%.9f\n",r->getWidth(),r->getHeight(),factor);
         resizing=true;
         setZoomFactor(factor);
+        // On DPI-only changes the logical zoom is unchanged, so explicitly
+        // apply the new transform here, not on the outer host callback stack.
+        if(dpiInFlight){
+            auto* frame=getFrame();
+            if(!frame||!frame->setZoom(factor*scale)||deferredClose){
+                resizing=false;return Steinberg::kResultFalse;
+            }
+        }
         const auto result=VSTGUI::VST3Editor::onSize(r);
         if(result!=Steinberg::kResultTrue)setZoomFactor(oldZoom);
         resizing=false;
-        if(result==Steinberg::kResultTrue&&!syncing)preferences.changeZoom(factor);
+        if(dpiInFlight&&result==Steinberg::kResultTrue)dpiAcknowledged=true;
+        if(result==Steinberg::kResultTrue&&!syncing&&opened)preferences.changeZoom(factor);
         return result;
     }
     Steinberg::tresult PLUGIN_API checkSizeConstraint(Steinberg::ViewRect* r) override{
         if(!r)return Steinberg::kInvalidArgument;
         const auto scale=getContentScaleFactor();
-        const auto w=std::clamp(r->getWidth(),static_cast<Steinberg::int32>(std::floor(720*scale)),static_cast<Steinberg::int32>(std::floor(1440*scale)));
-        r->right=r->left+w;r->bottom=r->top+static_cast<Steinberg::int32>(std::floor(w*.6));
+        const auto lo=editorPixels(.75,scale),hi=editorPixels(1.5,scale);
+        const auto w=std::clamp(r->getWidth(),lo.width,hi.width);
+        const auto target=editorPixels(syncTargetZoom,scale);
+        const auto h=syncing&&w==target.width?target.height:
+            w==lo.width?lo.height:w==hi.width?hi.height:static_cast<int>(std::floor(w*.6));
+        r->right=r->left+w;r->bottom=r->top+h;
         return Steinberg::kResultTrue;
     }
     VSTGUI::CView* createView(const VSTGUI::UIAttributes& attrs,const VSTGUI::IUIDescription* desc) override{
@@ -542,13 +585,13 @@ private:
                     helpOverlay->show(control->getTag(),hovered->getViewSize());
             }else helpOverlay->hide();
         }
-        if(syncing||std::abs(getZoomFactor()-preferences.zoom)*960*getContentScaleFactor()<.51)return;
-        const auto width=std::lround(960*preferences.zoom*getContentScaleFactor());
-        const auto height=std::floor(width*.6);
+        if(syncing||getZoomFactor()==preferences.zoom)return;
+        syncTargetZoom=preferences.zoom;
+        const auto pixels=editorPixels(syncTargetZoom,getContentScaleFactor());
         // A peer view may be denied by its own host. Do not overwrite the
         // shared desired zoom or claim that the rejected geometry applied.
         syncing=true;
-        requestResize(VSTGUI::CPoint(static_cast<double>(width),height));
+        requestResize(VSTGUI::CPoint(pixels.width,pixels.height));
         syncing=false;
     }
     EditorPreferences& preferences;
@@ -556,5 +599,7 @@ private:
     HelpButton* helpButton=nullptr;
     VSTGUI::CView* hovered=nullptr;
     bool opened=false,resizing=false,syncing=false;
+    bool dpiInFlight=false,dpiAcknowledged=false,deferredClose=false;
+    double syncTargetZoom=1.;
 };
 }

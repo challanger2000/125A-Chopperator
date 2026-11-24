@@ -1193,6 +1193,18 @@ void liveUIAudit(const VST3::Hosting::Module::Ptr& module){
         require(dpi->setContentScaleFactor(1.f)==kResultOk,"fractional DPI reset");pumpGui(80);
         geom(a.get(),ca,int(960*z),int(576*z));saved(z,0);
     }
+    // M01: recall while fractional DPI is already active, including
+    // endpoint 150%, exact logical zoom, and reverse direction.
+    load(1.,0);
+    require(dpi->setContentScaleFactor(1.37f)==kResultOk,"M01 fractional DPI accepted");pumpGui(80);
+    geom(a.get(),ca,1315,789);saved(1.,0);
+    load(1.5,0);geom(a.get(),ca,1972,1183);geom(b.get(),cb,1440,864);saved(1.5,0);
+    load(.75,0);geom(a.get(),ca,986,591);geom(b.get(),cb,720,432);saved(.75,0);
+    load(1.,0);geom(a.get(),ca,1315,789);saved(1.,0);
+    require(dpi->setContentScaleFactor(1.f)==kResultOk,"M01 fractional DPI reset");pumpGui(80);
+    geom(a.get(),ca,960,576);saved(1.,0);
+    require(handler->dirtyCalls==3,"M01 no dirty");
+    std::cout<<"NATIVE_P009_FRACTIONAL_RECALL_M01_PASS\n";
     load(1.25,0);
     const auto reopenPeer=[&](){
         DestroyWindow(hb);hb=makeHost();fb=owned(new GuiFrame(hb));
@@ -1229,8 +1241,28 @@ void liveUIAudit(const VST3::Hosting::Module::Ptr& module){
     geom(b.get(),cb,960,576);saved(1.,1);
     std::cout<<"NATIVE_P009_FRACTIONAL_DPI_REENTRANT_DETACH_PASS\n";
     DestroyWindow(ha);pumpGui(80);require(!IsWindow(ca)&&IsWindow(cb),"only first child closed");
+    // Fresh current view for M03. Host detaches from the actual DPI
+    // resize callback, not a preferences notification.
+    ha=makeHost();fa=owned(new GuiFrame(ha));
+    a=owned(n.controller->createView(ViewType::kEditor));
+    FUnknownPtr<IPlugViewContentScaleSupport> detachDpi(a.get());
+    require(a&&detachDpi.getInterface()&&a->setFrame(fa.get())==kResultOk&&
+        a->attached(ha,kPlatformTypeHWND)==kResultOk,"M03 fresh current editor");
+    ShowWindow(ha,SW_SHOWNA);pumpGui(80);ca=GetWindow(ha,GW_CHILD);
+    require(ca!=nullptr,"M03 native child");geom(a.get(),ca,960,576);
+    bool detached=false;
+    fa->intercept=[&](IPlugView* v,ViewRect*){
+        require(v==a.get()&&v->removed()==kResultOk&&v->setFrame(nullptr)==kResultOk,"M03 synchronous DPI detach");
+        detached=true;
+        return kResultFalse;
+    };
+    require(detachDpi->setContentScaleFactor(1.37f)!=kResultOk&&detached,"M03 DPI returns rejection after detach");
+    pumpGui(80);require(!IsWindow(ca)&&IsWindow(cb),"M03 child destroyed, peer survives");
+    DestroyWindow(ha);
+    load(1.25,1);geom(b.get(),cb,1200,720);saved(1.25,1);
     load(1.,1);geom(b.get(),cb,960,576);saved(1.,1);
     require(handler->dirtyCalls==4,"surviving view recall not dirty");
+    std::cout<<"NATIVE_P009_DPI_DETACH_M03_PASS\n";
     require(b->removed()==kResultOk&&b->setFrame(nullptr)==kResultOk,"second close");DestroyWindow(hb);
     require(n.controller->setComponentHandler(nullptr)==kResultOk,"clear live handler");
     UnregisterClassW(wc.lpszClassName,inst);

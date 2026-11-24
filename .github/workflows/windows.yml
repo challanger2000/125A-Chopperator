@@ -5,7 +5,17 @@ on:
     paths: ['src/**','tests/**','CMakeLists.txt','.github/workflows/windows.yml','tools/**','resources/**','.gitattributes']
   workflow_dispatch:
 jobs:
+  portable:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Unmodified portable Release build and tests
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCHOPPER_BUILD_VST3=OFF
+          cmake --build build --parallel 4
+          ctest --test-dir build --output-on-failure
   build:
+    needs: portable
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4

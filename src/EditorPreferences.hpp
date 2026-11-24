@@ -34,10 +34,16 @@ struct EditorPreferences {
     void remove(const void* owner){watches.remove(owner);uiWatches.remove(owner);}
     void restore(double z,bool h){zoom=z;help=h;notifyUI();}
     void changeZoom(double z){
-        if(zoom==z)return;zoom=z;if(markDirty)markDirty();notifyUI();
+        if(zoom==z)return;
+        zoom=z;
+        if(markDirty)markDirty();
+        notifyUI();
     }
     void changeHelp(bool h){
-        if(help==h)return;help=h;if(markDirty)markDirty();notifyUI();
+        if(help==h)return;
+        help=h;
+        if(markDirty)markDirty();
+        notifyUI();
     }
 };
 }
