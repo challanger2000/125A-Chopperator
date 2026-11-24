@@ -1,5 +1,7 @@
 # Chopperator P009 · unabhängiger adversarialer Nachaudit
 
+Der [abschließende Nachaudit](P009-FINAL-CODEX-AUDIT.md) dokumentiert den späteren Prüfstand `3bea058` und Windows-Run `45502305140`.
+
 **PARTIAL / NOT VERIFIED · RELEASE NO-GO.** Die ursprünglichen Gegenbeispiele zu Clock, Komponenten-State, Busaktivierung, Parser und Extrem-Samplerate sind in eigenen Linux-Processor-Proben behoben. Neue Gegenproben zeigen eine reentrante Fehlerstelle bei Editor-Benachrichtigungen und Lücken in den Paket- und Testgates. Die Windows-Schrittstatus und veröffentlichten Artefakt-Digests sind unabhängig bestätigt. Der aktive Windows-Editor, die Original-ZIP-Bytes und die Ziel-DAW bleiben in diesem Audit **NOT RUN** bzw. **NOT VERIFIED**.
 
 ## Prüfstand
