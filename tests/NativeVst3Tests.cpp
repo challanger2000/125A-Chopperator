@@ -642,15 +642,17 @@ void previewContract(Native& n,HWND child){
 // Capture the actual composed desktop, not the stale child-window DC.
 // A shown help panel has the dedicated background color and rendered text.
 // Check two distinct contextual panels, the disabled state and disappearance.
-struct HelpPixels{int background=0,ink=0;std::uint64_t signature=1469598103934665603ull;};
-HelpPixels helpPixels(HWND child,int x,int y){
+struct HelpPixels{
+    std::vector<std::uint32_t> data;
+};
+HelpPixels helpPixels(HWND child){
     if(HMODULE dwm=LoadLibraryW(L"dwmapi.dll")){
         using Flush=HRESULT(WINAPI*)();
         if(auto flush=reinterpret_cast<Flush>(GetProcAddress(dwm,"DwmFlush")))flush();
         FreeLibrary(dwm);
     }
-    constexpr int w=516,h=28;
-    POINT p{x+2,y+2};require(ClientToScreen(child,&p)!=0,"help capture coordinates");
+    constexpr int w=912,h=18;
+    POINT p{24,52};require(ClientToScreen(child,&p)!=0,"help capture coordinates");
     HDC screen=GetDC(nullptr),dc=CreateCompatibleDC(screen);
     BITMAPINFO bi{};bi.bmiHeader.biSize=sizeof(BITMAPINFOHEADER);bi.bmiHeader.biWidth=w;bi.bmiHeader.biHeight=-h;
     bi.bmiHeader.biPlanes=1;bi.bmiHeader.biBitCount=32;bi.bmiHeader.biCompression=BI_RGB;
@@ -659,13 +661,20 @@ HelpPixels helpPixels(HWND child,int x,int y){
     auto prev=SelectObject(dc,bitmap);
     require(BitBlt(dc,0,0,w,h,screen,p.x,p.y,SRCCOPY|CAPTUREBLT)!=0,"help desktop capture");GdiFlush();
     HelpPixels result;const auto* data=static_cast<const std::uint32_t*>(pixels);
-    for(int k=0;k<w*h;++k){
-        const auto value=data[k]&0xffffffu;
-        result.background+=value==0x101b27u;
-        const int r=(value>>16)&255,g=(value>>8)&255,b=value&255;
-        if(r>150&&g>150&&b>150){++result.ink;result.signature^=static_cast<std::uint64_t>(k);result.signature*=1099511628211ull;}
-    }
+    result.data.reserve(w*h);for(int k=0;k<w*h;++k)result.data.push_back(data[k]&0xffffffu);
     SelectObject(dc,prev);DeleteObject(bitmap);DeleteDC(dc);ReleaseDC(nullptr,screen);return result;
+}
+void checkHelpText(const HelpPixels& base,const HelpPixels& shown,const char* why){
+    constexpr int w=912,h=18;
+    int count=0,left=w,right=-1,top=h,bottom=-1;
+    for(int y=0;y<h;++y)for(int x=0;x<w;++x){
+        const auto k=y*w+x;
+        if(base.data[k]==shown.data[k])continue;
+        ++count;left=std::min(left,x);right=std::max(right,x);top=std::min(top,y);bottom=std::max(bottom,y);
+    }
+    std::cout<<"HELP_TEXT_PIXELS changed="<<count<<" bounds="<<left<<","<<top<<".."<<right<<","<<bottom<<"\n";
+    // Thin glyphs, not a filled rectangle; symmetric text bounds.
+    require(count>60&&count<2500&&right-left>80&&right-left<650&&std::abs((left+right)*.5-(w-1)*.5)<8&&bottom-top<16,why);
 }
 void helpContract(HWND host,HWND child){
     SetWindowPos(host,HWND_TOPMOST,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE);
@@ -678,20 +687,14 @@ void helpContract(HWND host,HWND child){
         INPUT press[2]{};press[0].type=press[1].type=INPUT_MOUSE;press[0].mi.dwFlags=MOUSEEVENTF_LEFTDOWN;press[1].mi.dwFlags=MOUSEEVENTF_LEFTUP;
         require(SendInput(2,press,sizeof(INPUT))==2,"help real mouse click");pumpGui(100);
     };
-    hover(24,60);hover(138,314);
-    require(helpPixels(child,12,212).background<50,"help default off hides mouseover");
-    hover(508,32);click();
-    hover(138,314);
-    const auto first=helpPixels(child,12,212);
-    std::cout<<"HELP_START_PIXELS background="<<first.background<<" ink="<<first.ink<<"\n";
-    require(first.background>10000&&first.ink>40,"START visible contextual tooltip");
-    hover(24,60);require(helpPixels(child,12,212).background<50,"tooltip vanishes on leave");
-    hover(404,468);
-    const auto second=helpPixels(child,144,398);
-    std::cout<<"HELP_WIDTH_PIXELS background="<<second.background<<" ink="<<second.ink<<"\n";
-    require(second.background>10000&&second.ink>40&&second.signature!=first.signature,"WIDTH distinct visible contextual tooltip");
-    hover(508,32);click();
-    hover(138,314);require(helpPixels(child,12,212).background<50,"help disabled hides mouseover");
+    hover(24,60);const auto base=helpPixels(child);
+    hover(138,314);require(helpPixels(child).data==base.data,"help default off hides mouseover");
+    hover(508,32);click();hover(138,314);
+    const auto first=helpPixels(child);checkHelpText(base,first,"START centered text only");
+    hover(24,60);require(helpPixels(child).data==base.data,"help vanishes on leave");
+    hover(404,468);const auto second=helpPixels(child);checkHelpText(base,second,"WIDTH centered text only");
+    require(second.data!=first.data,"distinct contextual text");
+    hover(508,32);click();hover(138,314);require(helpPixels(child).data==base.data,"help disabled hides mouseover");
     SetCursorPos(old.x,old.y);pumpGui(80);
     std::cout<<"NATIVE_HELP_MOUSEOVER_ON_OFF_PASS\n";
 }

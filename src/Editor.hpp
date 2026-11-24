@@ -250,7 +250,7 @@ private:
 class HelpOverlay final:public VSTGUI::CView{
 public:
     HelpOverlay():CView(VSTGUI::CRect(0,0,960,576)){setMouseEnabled(false);setTransparency(true);}
-    void show(int tag,const VSTGUI::CRect& target){
+    void show(int tag,const VSTGUI::CRect&){
         static constexpr const char* tips[]{
             "START: initial rhythmic note division.",
             "MID: note division at the middle point.",
@@ -267,28 +267,22 @@ public:
             "MODE: play once or repeat continuously."
         };
         if(tag<100||tag>112){hide();return;}
-        const double x=std::clamp((target.left+target.right)*.5-260.,12.,428.);
-        const double y=target.top<80?target.bottom+6:target.top-38;
-        box=VSTGUI::CRect(x,y,x+520,y+32);
         tip=tips[tag-100];invalidatePanel();
     }
     void hide(){if(tip){tip=nullptr;invalidatePanel();}}
     void draw(VSTGUI::CDrawContext* c) override{
         using namespace VSTGUI;
         if(tip){
-            c->setFillColor(CColor(16,27,39,255));
-            c->setFrameColor(CColor(243,172,101,255));
-            c->setLineWidth(1);c->drawRect(box,kDrawFilledAndStroked);
-            auto text=box;text.inset(10,2);
-            c->setFont(kNormalFont);c->setFontColor(CColor(226,227,228,255));
-            c->drawString(tip,text,kLeftText);
+            // Quiet, centered text in the existing free header strip.
+            // No colored panel, outline, or overlap with other controls.
+            c->setFont(kNormalFontSmall);c->setFontColor(CColor(191,193,196,255));
+            c->drawString(tip,CRect(24,52,936,70),kCenterText);
         }
         setDirty(false);
     }
 private:
     void invalidatePanel(){if(auto* p=getParentView())p->invalid();}
     const char* tip=nullptr;
-    VSTGUI::CRect box{};
 };
 
 class Editor final:public VSTGUI::AspectRatioVST3Editor{

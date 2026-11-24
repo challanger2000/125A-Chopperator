@@ -52,3 +52,5 @@ Owner requested toggled help (?) and free corner zoom rather than buttons. Help 
 Zoom persistence is mandatory: per-instance controller state, not a shared global or automatable parameter; default 100% and help off for new instances. Versioned controller-state payload with validation. Restore dimensions before editor attachment, preserve them through normal component/preset loads. Actual DAW project recall still requires final Studio Pro test.
 
 Contextual help now drawn inside the plugin canvas near the hovered control, using VSTGUI frame mouse observer rather than independent OS tooltip windows. Mouse-transparent overlay scales with GUI, hides on exit, mouse down or disabling ?. Same thirteen help descriptions and persisted preference. Verification pending.
+
+Owner feedback: contextual mouseover help must be subtle: text only, no border or filled panel, centered instead of left aligned. Use existing clear header strip (24,52)-(936,70), muted text, no overlap with controls. Question-mark toggle and state unchanged.
