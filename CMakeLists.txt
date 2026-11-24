@@ -41,11 +41,23 @@ if(CHOPPER_BUILD_VST3)
   target_compile_features(Chopperator PRIVATE cxx_std_20)
   target_link_libraries(Chopperator PRIVATE sdk vstgui_support)
   set(CHOPPER_GUI_DIR "${CMAKE_CURRENT_SOURCE_DIR}/gui-draft" CACHE PATH "Prepared verified GUI resources")
-  smtg_target_add_plugin_resources(Chopperator RESOURCES
-    resources/chopper.uidesc
+  set(CHOPPER_GUI_FILES
+    ${CMAKE_CURRENT_SOURCE_DIR}/resources/chopper.uidesc
     ${CHOPPER_GUI_DIR}/logo.png ${CHOPPER_GUI_DIR}/logo_3x.png
     ${CHOPPER_GUI_DIR}/knob_L_100.png ${CHOPPER_GUI_DIR}/knob_L_150.png ${CHOPPER_GUI_DIR}/knob_L_200.png ${CHOPPER_GUI_DIR}/knob_L_300.png
     ${CHOPPER_GUI_DIR}/knob_S_100.png ${CHOPPER_GUI_DIR}/knob_S_150.png ${CHOPPER_GUI_DIR}/knob_S_200.png ${CHOPPER_GUI_DIR}/knob_S_300.png)
+  # SDK resource helper emits an unquoted VS macro for package paths with
+  # spaces. Use the actual binary directory and VERBATIM commands instead.
+  foreach(asset IN LISTS CHOPPER_GUI_FILES)
+    if(NOT EXISTS "${asset}")
+      message(FATAL_ERROR "Missing prepared GUI asset: ${asset}")
+    endif()
+  endforeach()
+  add_custom_target(chopper_gui_resources ALL
+    COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:Chopperator>/../Resources"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CHOPPER_GUI_FILES} "$<TARGET_FILE_DIR:Chopperator>/../Resources"
+    DEPENDS Chopperator ${CHOPPER_GUI_FILES}
+    VERBATIM)
   target_sources(Chopperator PRIVATE ${vst3sdk_SOURCE_DIR}/public.sdk/source/main/dllmain.cpp)
   smtg_target_configure_version_file(Chopperator)
   add_executable(chopper_native_tests tests/NativeVst3Tests.cpp
@@ -53,5 +65,5 @@ if(CHOPPER_BUILD_VST3)
     ${vst3sdk_SOURCE_DIR}/public.sdk/source/vst/hosting/plugprovider.cpp
     ${vst3sdk_SOURCE_DIR}/public.sdk/source/common/memorystream.cpp)
   target_compile_features(chopper_native_tests PRIVATE cxx_std_17)
-  target_link_libraries(chopper_native_tests PRIVATE sdk_hosting)
+  target_link_libraries(chopper_native_tests PRIVATE sdk_hosting user32 ole32 gdi32)
 endif()

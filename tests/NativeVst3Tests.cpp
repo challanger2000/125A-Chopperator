@@ -9,6 +9,13 @@
 #include "pluginterfaces/vst/ivstprocesscontext.h"
 #include "pluginterfaces/vst/vstspeaker.h"
 #include "pluginterfaces/base/ustring.h"
+#include "base/source/fobject.h"
+#include "pluginterfaces/vst/ivstplugview.h"
+#include "pluginterfaces/gui/iplugview.h"
+#define NOMINMAX
+#include <windows.h>
+#include <objbase.h>
+#include <cstdint>
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -332,13 +339,127 @@ void programme(const VST3::Hosting::Module::Ptr& module,const std::filesystem::p
     }
 }
 
+
+void pumpGui(int ms){
+    auto end=std::chrono::steady_clock::now()+std::chrono::milliseconds(ms);
+    do{MSG m{};while(PeekMessageW(&m,nullptr,0,0,PM_REMOVE)){TranslateMessage(&m);DispatchMessageW(&m);}
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }while(std::chrono::steady_clock::now()<end);
+}
+class GuiFrame final:public FObject, public IPlugFrame {
+public:
+    explicit GuiFrame(HWND parent):parent_(parent){}
+    tresult PLUGIN_API resizeView(IPlugView* view,ViewRect* r) override{
+        if(!view||!r)return kInvalidArgument;
+        RECT outer{0,0,r->getWidth(),r->getHeight()};
+        AdjustWindowRectEx(&outer,WS_OVERLAPPEDWINDOW,FALSE,WS_EX_TOOLWINDOW);
+        SetWindowPos(parent_,nullptr,0,0,outer.right-outer.left,outer.bottom-outer.top,SWP_NOMOVE|SWP_NOZORDER|SWP_NOACTIVATE);
+        return view->onSize(r);
+    }
+    OBJ_METHODS(GuiFrame,FObject)
+    DEFINE_INTERFACES
+        DEF_INTERFACE(IPlugFrame)
+    END_DEFINE_INTERFACES(FObject)
+    REFCOUNT_METHODS(FObject)
+private: HWND parent_;
+};
+class GuiHandler final:public FObject,public IComponentHandler{
+public:
+    std::array<int,14> begins{},edits{},ends{};
+    std::array<double,14> last{};
+    tresult PLUGIN_API beginEdit(ParamID id) override{if(id<100||id>113)return kInvalidArgument;++begins[id-100];return kResultOk;}
+    tresult PLUGIN_API performEdit(ParamID id,ParamValue value) override{if(id<100||id>113||value<0||value>1)return kInvalidArgument;++edits[id-100];last[id-100]=value;return kResultOk;}
+    tresult PLUGIN_API endEdit(ParamID id) override{if(id<100||id>113)return kInvalidArgument;++ends[id-100];return kResultOk;}
+    tresult PLUGIN_API restartComponent(int32) override{return kResultOk;}
+    OBJ_METHODS(GuiHandler,FObject)
+    DEFINE_INTERFACES
+        DEF_INTERFACE(IComponentHandler)
+    END_DEFINE_INTERFACES(FObject)
+    REFCOUNT_METHODS(FObject)
+};
+void clickGui(HWND child,int x,int y){
+    SendMessageW(child,WM_MOUSEMOVE,0,MAKELPARAM(x,y));
+    SendMessageW(child,WM_LBUTTONDOWN,MK_LBUTTON,MAKELPARAM(x,y));
+    SendMessageW(child,WM_LBUTTONUP,0,MAKELPARAM(x,y));pumpGui(60);
+}
+void guiContract(const VST3::Hosting::Module::Ptr& module,const std::filesystem::path& folder){
+    Native n(module);auto handler=owned(new GuiHandler);
+    require(n.controller->setComponentHandler(handler.get())==kResultOk,"gui handler");
+    const auto inst=GetModuleHandleW(nullptr);
+    WNDCLASSW wc{};wc.hInstance=inst;wc.lpfnWndProc=DefWindowProcW;wc.lpszClassName=L"ChopperatorNativeTest";
+    require(RegisterClassW(&wc)!=0,"gui host class");
+    std::filesystem::create_directories(folder);
+    for(int cycle=0;cycle<2;++cycle){
+        auto view=owned(n.controller->createView(ViewType::kEditor));
+        require(view.get()!=nullptr,"native editor present");
+        require(view->isPlatformTypeSupported(kPlatformTypeHWND)==kResultTrue,"native HWND supported");
+        ViewRect size{};require(view->getSize(&size)==kResultOk&&size.getWidth()==960&&size.getHeight()==576,"initial native editor dimensions");
+        RECT outer{0,0,size.getWidth(),size.getHeight()};AdjustWindowRectEx(&outer,WS_OVERLAPPEDWINDOW,FALSE,WS_EX_TOOLWINDOW);
+        HWND host=CreateWindowExW(WS_EX_TOOLWINDOW,wc.lpszClassName,L"Chopperator editor QA",WS_OVERLAPPEDWINDOW,
+            0,0,outer.right-outer.left,outer.bottom-outer.top,nullptr,nullptr,inst,nullptr);
+        require(host!=nullptr,"gui host window");auto frame=owned(new GuiFrame(host));
+        require(view->setFrame(frame.get())==kResultOk,"gui frame");
+        require(view->attached(host,kPlatformTypeHWND)==kResultOk,"editor attach");
+        ShowWindow(host,SW_SHOWNA);UpdateWindow(host);pumpGui(150);
+        HWND child=GetWindow(host,GW_CHILD);require(child!=nullptr,"native editor child");
+        FUnknownPtr<IParameterFinder> finder(view.get());
+        require(finder.getInterface()!=nullptr,"native parameter finder");
+        const std::array<std::array<int,3>,13> hits{{{{138,314,100}},{{366,314,101}},{{594,314,102}},{{822,314,103}},
+            {{100,468,104}},{{252,468,105}},{{120,546,106}},{{404,468,107}},{{556,468,108}},{{708,468,109}},
+            {{860,468,110}},{{610,34,111}},{{820,34,112}}}};
+        for(const auto& hit:hits){ParamID id=0;require(finder->findParameter(hit[0],hit[1],id)==kResultTrue&&id==static_cast<ParamID>(hit[2]),"native parameter hit mapping");}
+        require(n.controller->setParamNormalized(111,0)==kResultOk,"host active off");
+        require(n.controller->setParamNormalized(106,0)==kResultOk,"host rect");
+        require(n.controller->setParamNormalized(112,0)==kResultOk,"host one shot");pumpGui(80);
+        clickGui(child,650,34);clickGui(child,920,34);clickGui(child,844,546);
+        require(n.controller->getParamNormalized(111)==1&&n.controller->getParamNormalized(112)==1&&n.controller->getParamNormalized(106)==1,"native segmented controls");
+        for(int id:{106,111,112})require(handler->begins[id-100]>0&&handler->edits[id-100]>0&&handler->ends[id-100]==handler->begins[id-100],"balanced edit notifications");
+        // Actual editor resize negotiation; no claim of Studio Pro support.
+        require(view->canResize()==kResultTrue,"editor resizable");
+        ViewRect scaled{0,0,720,432};require(view->checkSizeConstraint(&scaled)==kResultOk,"resize constraint");
+        require(scaled.getWidth()==720&&scaled.getHeight()==432,"aspect resize 75%");
+        require(frame->resizeView(view.get(),&scaled)==kResultOk,"resize editor");pumpGui(100);
+        require(view->getSize(&size)==kResultOk&&size.getWidth()==720&&size.getHeight()==432,"actual resized geometry");
+        ViewRect original{0,0,960,576};require(view->checkSizeConstraint(&original)==kResultOk&&frame->resizeView(view.get(),&original)==kResultOk,"resize restore");pumpGui(100);
+        require(view->getSize(&size)==kResultOk&&size.getWidth()==960&&size.getHeight()==576,"restored geometry");
+        // Optional actual screen evidence; capture failure is not silently called a screenshot.
+        if(cycle==0){
+            RECT r{};GetClientRect(child,&r);
+            const int width=r.right,height=r.bottom;
+            HDC screen=GetDC(child),dc=CreateCompatibleDC(screen);
+            BITMAPINFO bi{};bi.bmiHeader.biSize=sizeof(BITMAPINFOHEADER);bi.bmiHeader.biWidth=width;bi.bmiHeader.biHeight=-height;bi.bmiHeader.biPlanes=1;bi.bmiHeader.biBitCount=32;bi.bmiHeader.biCompression=BI_RGB;
+            void* pixels=nullptr;HBITMAP bitmap=CreateDIBSection(dc,&bi,DIB_RGB_COLORS,&pixels,nullptr,0);
+            if(bitmap&&pixels&&width>0&&height>0){
+                auto prev=SelectObject(dc,bitmap);BOOL copied=BitBlt(dc,0,0,width,height,screen,0,0,SRCCOPY);GdiFlush();
+                auto* data=static_cast<std::uint32_t*>(pixels);
+                std::size_t bright=0,orange=0;
+                for(int i=0;i<width*height;++i){auto v=data[i];int r=(v>>16)&255,g=(v>>8)&255,b=v&255;
+                    bright+=r>150&&g>150&&b>150;orange+=r>180&&g>70&&g<190&&b<110;}
+                if(copied&&bright>100&&orange>100){
+                    BITMAPFILEHEADER h{};h.bfType=0x4d42;h.bfOffBits=sizeof(h)+sizeof(BITMAPINFOHEADER);h.bfSize=h.bfOffBits+width*height*4;
+                    std::ofstream f(folder/"native-editor.bmp",std::ios::binary);f.write(reinterpret_cast<char*>(&h),sizeof(h));f.write(reinterpret_cast<char*>(&bi.bmiHeader),sizeof(bi.bmiHeader));f.write(static_cast<char*>(pixels),width*height*4);
+                    if(f)std::cout<<"NATIVE_EDITOR_CAPTURE "<<width<<"x"<<height<<"\n";
+                }else std::cout<<"NATIVE_EDITOR_CAPTURE_UNAVAILABLE bright="<<bright<<" orange="<<orange<<"\n";
+                SelectObject(dc,prev);
+            }
+            if(bitmap)DeleteObject(bitmap);DeleteDC(dc);ReleaseDC(child,screen);
+        }
+        require(view->removed()==kResultOk&&view->setFrame(nullptr)==kResultOk,"editor removal");DestroyWindow(host);pumpGui(50);
+    }
+    require(n.controller->setComponentHandler(nullptr)==kResultOk,"clear handler");
+    UnregisterClassW(wc.lpszClassName,inst);
+    std::cout<<"NATIVE_EDITOR_CONTRACT_PASS two attach cycles, 13 hit mappings, three segment edits, resize roundtrip\n";
+}
+
 int main(int argc,char** argv){
     require(argc==2||argc==3||argc==4,"bundle argument");
+    struct ComScope{HRESULT hr=CoInitializeEx(nullptr,COINIT_APARTMENTTHREADED);~ComScope(){if(SUCCEEDED(hr))CoUninitialize();}} com;
+    require(SUCCEEDED(com.hr),"COM apartment");
     std::string error;auto module=VST3::Hosting::Module::create(argv[1],error);
     if(!module){std::cerr<<error<<'\n';return 1;}
     HostApplication host;PluginContextFactory::instance().setPluginContext(&host);
     module->getFactory().setHostContext(&host);
-    if(argc==4){require(std::string(argv[2])=="--programme","programme argument");programme(module,argv[3]);return 0;}
+    if(argc==4){if(std::string(argv[2])=="--editor"){guiContract(module,argv[3]);return 0;}require(std::string(argv[2])=="--programme","programme argument");programme(module,argv[3]);return 0;}
     if(argc==3){require(std::string(argv[2])=="--negative-spectrum","negative control argument");spectral(module,true);return 2;}
     waveformContracts(module);spectral(module,false);realtimeProbe(module);
     timing<float>(module,48000,2);timing<double>(module,48000,1);

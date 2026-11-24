@@ -30,3 +30,4 @@
 ## P007 / 0.7.0
 - P006 complete Windows QA success and static design visual review.
 - Native VSTGUI editor with existing parameter bindings, official logo and all four original knob resolutions. Remove transparent frame padding and tile without altering retained pixels. Core-derived preview at reference tempo/meter, no fake playback indicator. No DSP change.
+- P007 resource-copy correction for Windows package names with spaces, native editor host interaction gate.
