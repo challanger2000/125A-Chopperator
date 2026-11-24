@@ -86,6 +86,23 @@ jobs:
           Write-Host "NATIVE_GUI_GATE editor=$editorExit preview=$previewExit"
           if ($editorExit -ne 0 -or $previewExit -ne 0) { throw "Native GUI interaction or timing display failed" }
           exit 0
+      - name: Native resource corruption and editor lifecycle
+        shell: pwsh
+        run: |
+          $plugin = (Resolve-Path 'artifact/125A Chopperator.vst3').Path
+          $native = @(Get-ChildItem build -Recurse -File -Filter chopper_native_tests.exe | Where-Object { $_.FullName -match 'Release' })
+          & $native[0].FullName $plugin --resource-positive
+          if ($LASTEXITCODE -ne 0) { throw "Editor lifecycle failed" }
+          foreach ($name in @('logo_3x.png','knob_L_1.5x.png')) {
+            $folder = Join-Path $PWD ("negative-" + $name)
+            New-Item -ItemType Directory -Force -Path $folder | Out-Null
+            Copy-Item $plugin $folder -Recurse
+            $copy = Join-Path $folder '125A Chopperator.vst3'
+            $resource = Join-Path $copy ("Contents/Resources/" + $name)
+            [IO.File]::WriteAllBytes($resource,[byte[]](1,2,3,4))
+            & $native[0].FullName $copy --resource-negative
+            if ($LASTEXITCODE -ne 0) { throw "Corrupt resource was not rejected: $name" }
+          }
       - name: Programme fixture acquisition and native PCM checks
         shell: pwsh
         run: |

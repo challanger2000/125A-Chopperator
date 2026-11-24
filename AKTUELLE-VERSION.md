@@ -1,5 +1,10 @@
 # Current development state — P009 / 0.9.0 follow-up
 
+## Exact P009 Windows and independent technical Lab
+Run 45474137150 / 854d0fb0ebdd41df4ce52cfab6175879de753cba SUCCESS; 4/4 CTests, 47/47 Validator, 57/0/0 Tester, native Clock/Lifecycle/Malformed Queue and previous GUI regressions PASS. Strict realtime signal gate PASS: wet energy ratio .222227, difference energy ratio .624714, p99 108.8us, max 864.9us, deadline 2666.67us, 0/384 overruns. Independently pinned P74 Lab TECHNICAL_BASELINE_PASS, native technical PASS, no faults; no declared product coverage or release approval. Artifact 14958597941 server SHA256 2ea64f84c8cfcf9adb0c98bada73683f67a96f8fbf4fb40bbdbee69d8f39dea5; QA 14958627936 SHA256 b36588dcce3d43c041967efb611794a8710b3029eff6972a46e38d274ed0269b. 
+Next candidate: preserve Glass V2 geometry and timing, constrain MID label only when measured text widths imply collision; add composed-pixel label and maximum-density width controls, 20 native editor lifecycle cycles and fresh-process malformed logo/knob asset rejection. NOT RUN until exact Windows result. Archive inspection, actual DAW/ASIO, remaining DPI/preview matrix, independent Codex re-audit and complete declared product coverage remain open. No release approval.
+
+
 ## Verified follow-up and remaining gates
 Exact source a5e3b4747d08a50479b9e82425b186a4cdcd8bab, Windows run 45470809451 SUCCESS. 4/4 CTests, 47/47 Validator, 57/0/0 released Tester, all 13 GUI audio chains, all seven timing display controls, six programme PCM fixtures, native text/caret under automation and two-view live recall/DPI/rejection/dirty gates PASS. Paced 384 callbacks, p99 225.6 us, max 529.1 us, deadline 2666.67 us, 0 overruns. Artifact 14956533445 SHA256 (server) 068f86ef324e3d1ce3e7caf240fc6f682679f63916338991d2fb1345317670c7; QA 14956548292 SHA256 (server) f55f3c75401d912245e9f5026ade391e4ffbc77e5912b816102dabb1aee13cd7. Archive bytes/clean machine not independently verified.
 

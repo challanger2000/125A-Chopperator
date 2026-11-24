@@ -212,7 +212,13 @@ public:
         }
         c->setFont(kNormalFontSmall);c->setFontColor(CColor(170,170,170,255));
         c->drawString("START",CRect(x(10),y(78),x(70),y(98)),kLeftText);
-        c->drawString("MID",CRect(x(10+320*position-28),y(78),x(10+320*position+28),y(98)),kCenterText);
+        // Keep the actual timing position unchanged. Only the label is
+        // shifted at the extreme ends, where glyphs would otherwise collide.
+        const double halfMid=c->getStringWidth("MID")*.5;
+        const double labelMin=x(10)+c->getStringWidth("START")+6+halfMid;
+        const double labelMax=x(330)-c->getStringWidth("END")-6-halfMid;
+        const double midX=std::clamp(x(10+320*position),labelMin,labelMax);
+        c->drawString("MID",CRect(midX-28*r.getWidth()/340,y(78),midX+28*r.getWidth()/340,y(98)),kCenterText);
         c->drawString("END",CRect(x(270),y(78),x(330),y(98)),kRightText);
         setDirty(false);
     }

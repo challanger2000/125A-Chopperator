@@ -618,6 +618,27 @@ bool matchesPreview(const std::vector<bool>& actual,const PreviewSettings& p){
     return stable>500&&errors<=2;
 }
 void assertPreview(const std::vector<bool>& actual,const PreviewSettings& p){require(matchesPreview(actual,p),"rendered timing diagram matches independent phase oracle");}
+// Capture actual composed preview pixels, including fractional pulse
+// density and label glyphs (the binary orange oracle is not sufficient
+// when thousands of gates occupy fewer physical pixels).
+std::vector<std::uint32_t> previewPixels(HWND child,int x,int y,int w,int h,bool desktop){
+    if(HMODULE dwm=LoadLibraryW(L"dwmapi.dll")){
+        using Flush=HRESULT(WINAPI*)();
+        if(auto flush=reinterpret_cast<Flush>(GetProcAddress(dwm,"DwmFlush")))flush();
+        FreeLibrary(dwm);
+    }
+    POINT origin{x,y};if(desktop)require(ClientToScreen(child,&origin)!=0,"preview region coords");
+    HWND source=desktop?nullptr:child;HDC screen=GetDC(source),dc=CreateCompatibleDC(screen);
+    BITMAPINFO bi{};bi.bmiHeader.biSize=sizeof(BITMAPINFOHEADER);bi.bmiHeader.biWidth=w;
+    bi.bmiHeader.biHeight=-h;bi.bmiHeader.biPlanes=1;bi.bmiHeader.biBitCount=32;bi.bmiHeader.biCompression=BI_RGB;
+    void* pixels=nullptr;HBITMAP bitmap=CreateDIBSection(dc,&bi,DIB_RGB_COLORS,&pixels,nullptr,0);
+    require(screen&&dc&&bitmap&&pixels,"preview region bitmap");
+    auto prev=SelectObject(dc,bitmap);
+    require(BitBlt(dc,0,0,w,h,screen,origin.x,origin.y,desktop?(SRCCOPY|CAPTUREBLT):SRCCOPY)!=0,"preview region capture");GdiFlush();
+    const auto* data=static_cast<const std::uint32_t*>(pixels);
+    std::vector<std::uint32_t> result(data,data+w*h);
+    SelectObject(dc,prev);DeleteObject(bitmap);DeleteDC(dc);ReleaseDC(source,screen);return result;
+}
 void previewContract(Native& n,HWND child){
     constexpr std::array<ParamID,7> ids{100,101,102,103,104,105,107};
     constexpr PreviewSettings baseline{4./6,1./6,4./6,5./65,.5,.5,.5};
@@ -672,7 +693,54 @@ void previewContract(Native& n,HWND child){
     auto edge=baseline;edge[6]=0;apply(edge);const auto empty=previewRow(child,125,desktop);
     require(std::none_of(empty.begin(),empty.end(),[](bool v){return v;}),"width zero empty preview");
     edge[6]=1;apply(edge);assertPreview(previewRow(child,125,desktop),edge);
+    // Extreme label positions: identify real START/END glyph columns
+    // from the center-position capture, then require those pixels to
+    // remain identical when MID moves to either extreme.
+    apply(baseline);
+    constexpr int labelW=912,labelH=25;
+    const auto labels=previewPixels(child,24,170,labelW,labelH,desktop);
+    const auto glyph=[](std::uint32_t px){
+        const int r=(px>>16)&255,g=(px>>8)&255,b=px&255;
+        return r>100&&g>100&&b>100&&std::abs(r-g)<12&&std::abs(g-b)<12;
+    };
+    int startRight=-1,endLeft=labelW,centerCount=0;
+    for(int yy=0;yy<labelH;++yy)for(int xx=0;xx<labelW;++xx){
+        if(!glyph(labels[yy*labelW+xx]))continue;
+        if(xx<labelW/3)startRight=std::max(startRight,xx);
+        else if(xx>2*labelW/3)endLeft=std::min(endLeft,xx);
+        else ++centerCount;
+    }
+    require(startRight>25&&startRight<120&&endLeft>labelW-120&&endLeft<labelW-25&&centerCount>10,"three reference label glyphs");
+    for(double pos:{0.,1.}){
+        auto extreme=baseline;extreme[4]=pos;apply(extreme);
+        assertPreview(previewRow(child,125,desktop),extreme);
+        const auto actual=previewPixels(child,24,170,labelW,labelH,desktop);
+        int midPixels=0;
+        for(int yy=0;yy<labelH;++yy)for(int xx=0;xx<labelW;++xx){
+            const int k=yy*labelW+xx;
+            if(xx<=startRight+2||xx>=endLeft-2)require(glyph(actual[k])==glyph(labels[k]),"extreme label preserves START and END glyphs");
+            else midPixels+=glyph(actual[k]);
+        }
+        require(midPixels>centerCount/2&&midPixels<centerCount*2,"extreme MID remains readable");
+    }
+    // 4096 impulses: check the continuous color coverage instead of
+    // requiring unresolved subpixel gaps to have a binary screen width.
+    PreviewSettings dense{1,1,1,1,.5,.5,0};
+    const auto redSum=[&](){
+        const auto pixels=previewPixels(child,52,110,856,35,desktop);
+        double sum=0;for(auto px:pixels)sum+=double((px>>16)&255);return sum;
+    };
+    apply(dense);const double off=redSum();
+    const auto denseOff=previewRow(child,125,desktop);
+    require(std::none_of(denseOff.begin(),denseOff.end(),[](bool v){return v;}),"dense zero width");
+    dense[6]=1;apply(dense);const double full=redSum();
+    require(full>off+1000000,"dense full width positive reference");
+    dense[6]=.5;apply(dense);const double half=redSum();
+    const double coverage=(half-off)/(full-off);
+    std::cout<<"PREVIEW_DENSE_COVERAGE ratio="<<coverage<<"\n";
+    require(coverage>.15&&coverage<.85,"dense half width distinct from both extremes");
     apply(baseline);require(previewRow(child,125,desktop)==base,"preview host restore exact");
+    std::cout<<"NATIVE_P009_PREVIEW_EXTREMES_PASS\n";
     std::cout<<"NATIVE_TIMING_DISPLAY_ALL_7_REACTIVE_PASS\n";
 }
 
@@ -1157,6 +1225,40 @@ void clockLifecycleAndQueue(const VST3::Hosting::Module::Ptr& module){
     std::cout<<"NATIVE_P009_CLOCK_LIFECYCLE_MALFORMED_QUEUE_PASS\n";
 }
 
+// Actual module attaches to a native HWND, then detaches repeatedly.
+// A separate process with a deliberately damaged resource must reject
+// attach; no alteration of the staged release candidate.
+void resourceAndLifecycle(const VST3::Hosting::Module::Ptr& module,bool expectFailure){
+    Native n(module);auto handler=owned(new GuiHandler);
+    require(n.controller->setComponentHandler(handler.get())==kResultOk,"resource handler");
+    const auto inst=GetModuleHandleW(nullptr);
+    WNDCLASSW wc{};wc.hInstance=inst;wc.lpfnWndProc=DefWindowProcW;wc.lpszClassName=L"ChopperatorResourceAudit";
+    require(RegisterClassW(&wc)!=0,"resource host class");
+    const auto before=n.save();
+    for(int cycle=0;cycle<(expectFailure?1:20);++cycle){
+        HWND host=CreateWindowExW(WS_EX_TOOLWINDOW,wc.lpszClassName,L"Resource audit",WS_OVERLAPPEDWINDOW,
+            0,0,990,640,nullptr,nullptr,inst,nullptr);
+        require(host!=nullptr,"resource host");
+        auto frame=owned(new GuiFrame(host));auto view=owned(n.controller->createView(ViewType::kEditor));
+        require(view&&view->setFrame(frame.get())==kResultOk,"resource editor");
+        const auto result=view->attached(host,kPlatformTypeHWND);
+        if(expectFailure)require(result!=kResultOk,"corrupt resource must reject editor attach");
+        else {
+            require(result==kResultOk&&GetWindow(host,GW_CHILD)!=nullptr,"lifecycle native attach");
+            pumpGui(25);
+            require(view->removed()==kResultOk,"lifecycle native detach");
+            pumpGui(20);
+            require(GetWindow(host,GW_CHILD)==nullptr,"native child destroyed");
+        }
+        require(view->setFrame(nullptr)==kResultOk,"resource clear frame");
+        DestroyWindow(host);
+        require(n.save()==before,"resource/lifecycle component state unchanged");
+    }
+    require(n.controller->setComponentHandler(nullptr)==kResultOk,"resource clear handler");
+    UnregisterClassW(wc.lpszClassName,inst);
+    std::cout<<(expectFailure?"NATIVE_P009_CORRUPT_RESOURCE_REJECT_PASS":"NATIVE_P009_LIFECYCLE_20_PASS")<<"\n";
+}
+
 int main(int argc,char** argv){
     require(argc==2||argc==3||argc==4,"bundle argument");
     struct ComScope{HRESULT hr=CoInitializeEx(nullptr,COINIT_APARTMENTTHREADED);~ComScope(){if(SUCCEEDED(hr))CoUninitialize();}} com;
@@ -1166,7 +1268,11 @@ int main(int argc,char** argv){
     HostApplication host;PluginContextFactory::instance().setPluginContext(&host);
     module->getFactory().setHostContext(&host);
     if(argc==4){if(std::string(argv[2])=="--editor"||std::string(argv[2])=="--preview"){guiContract(module,argv[3],std::string(argv[2])=="--preview");if(std::string(argv[2])=="--editor")liveUIAudit(module);return 0;}require(std::string(argv[2])=="--programme","programme argument");programme(module,argv[3]);return 0;}
-    if(argc==3){require(std::string(argv[2])=="--negative-spectrum","negative control argument");spectral(module,true);return 2;}
+    if(argc==3){
+        const std::string mode=argv[2];
+        if(mode=="--resource-positive"||mode=="--resource-negative"){resourceAndLifecycle(module,mode=="--resource-negative");return 0;}
+        require(mode=="--negative-spectrum","negative control argument");spectral(module,true);return 2;
+    }
     auditRegressions(module);clockLifecycleAndQueue(module);
     waveformContracts(module);spectral(module,false);realtimeProbe(module);
     timing<float>(module,48000,2);timing<double>(module,48000,1);
