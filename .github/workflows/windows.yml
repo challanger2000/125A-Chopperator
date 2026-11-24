@@ -1,0 +1,35 @@
+name: Windows x64 VST3 and core contracts
+on:
+  push:
+    branches: [main]
+    paths: ['src/**','tests/**','CMakeLists.txt','.github/workflows/windows.yml']
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DCHOPPER_BUILD_VST3=ON
+      - name: Compile
+        run: cmake --build build --config Release --parallel --target chopper_core_tests chopper_extended_tests chopper_host_tests Chopperator validator
+      - name: Core and host-engine tests
+        run: ctest --test-dir build -C Release --output-on-failure
+      - name: Verify exact staged Windows bundle and run SDK validator
+        shell: pwsh
+        run: |
+          $bundles = @(Get-ChildItem build -Recurse -Directory -Filter '125A Chopperator.vst3')
+          if ($bundles.Count -ne 1) { throw "Expected exactly one built plugin bundle" }
+          New-Item -ItemType Directory -Force -Path artifact | Out-Null
+          Copy-Item $bundles[0].FullName artifact -Recurse
+          $plugin = Resolve-Path 'artifact/125A Chopperator.vst3'
+          $binary = Join-Path $plugin 'Contents/x86_64-win/125A Chopperator.vst3'
+          if (-not (Test-Path $binary -PathType Leaf)) { throw "Plugin bundle and inner binary naming mismatch" }
+          $validator = @(Get-ChildItem build -Recurse -File -Filter validator.exe | Where-Object { $_.FullName -match 'Release' })
+          if ($validator.Count -ne 1) { throw "Expected exactly one Release validator" }
+          & $validator[0].FullName $plugin.Path
+          if ($LASTEXITCODE -ne 0) { throw "VST3 validation failed" }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: 125A-Chopperator-P003-Windows-x64-development
+          path: artifact
