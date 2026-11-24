@@ -1,0 +1,32 @@
+# Chopperator static GUI design — draft 01, not implemented or owner-approved
+
+One dark, compact hardware-inspired panel, logical 960 × 576 px. Preserve the already agreed control hierarchy; no filters, menus for unrelated features, additional effects or GUI-only sound parameters. The final artwork is still a product-design draft.
+
+## Layout coordinates (logical pixels)
+
+| Region | x/y/w/h | Purpose |
+|---|---|---|
+| Header | 16/12/928/48 | official master logo, CHOPPERATOR title, ACTIVE and MODE |
+| Rate/envelope display | 24/72/912/138 | actual predicted gain envelope; start/mid/end markers, no editing by drawing |
+| Primary controls | 24/224/912/176 | START, MID, END, LENGTH — four large knobs with explicit values |
+| Secondary controls | 24/414/912/104 | MID POSITION, CURVE, WIDTH, ATTACK, RELEASE, MIX — six smaller knobs |
+| Shape selector | 24/528/912/36 | RECT, SAW UP, SAW DOWN, TRIANGLE, SINE — five equal-width mutually exclusive buttons |
+
+- Primary centres: 138, 366, 594, 822; 128 px official L assets. Secondary centres: 100, 252, 404, 556, 708, 860; 64 px official S assets.
+- Values: note denominators as 1/N; length as 1/4, 1/2 or 1–64 bars; curve signed percentage; midpoint 1–99%; attack/release percentage of instantaneous period; all visible.
+- Header ACTIVE is a two-state automatable parameter (111), not global host BYPASS (113). MODE is a two-state parameter (112). Do not draw a second global bypass control in the panel. Shape ID 106.
+- Length must allow all 66 positions, with mouse wheel/drag and direct value text interaction if supported. No long dropdown.
+- Display must use the same settings/phase functions as DSP and visualize the configured finite trajectory, not pretend to show live audio. Live playhead is optional only if independently verified; no invented position. At long lengths with dense cycles use per-pixel min/max rather than sample-drop aliasing in the drawing.
+- Exact existing IDs/defaults/state schema retained. Standard Ctrl+left-click resets to real default, not 0.5. Editor changes notify host begin/perform/end edit; automation reflects in view.
+- Continuous proportional corner resize target after native VSTGUI implementation; minimum readable logical scale 0.75 and max 1.5 initially. Host negotiation, hit tests and DPI need native verification. Do not claim resize inside Studio Pro until tested.
+- Neutral charcoal, black inset control areas, grey labels, orange waveform and selected indicators. Use official red/silver logo unchanged. Subtle screws at corners only; no excessive shadows. No promotional renders.
+
+## Authoritative source asset pins
+
+Branding main 20c4d9d2a3b37e6a8d17e693ed76d9351203c288, master 125A_Logo_Master_FINAL.svg blob bd398ffa3b728b1a847bb519fad8168222bccb48. Preserve original viewBox 0 0 1774 887, geometry and colors.
+Knob Designer main 45565ff036eb469b9b0c092744233961b1dec837 identifies approved MixEngine Analog L/S multi-resolution set. Matching generated asset branch commit c09cff5d958969eb025fe09255173e65103deae9:
+- L 128/192/256/384 px blobs 76f9f064a2a234bbf5675f6770416bc03b4adfd6, 70f4f68b7462fbee4f52199d50d3af7b7b25c7af, 1c25b2ff43ce237f136054624ea9ee7fe4602ec7, 776a12411487ea5e2903c367529f662029171cf9.
+- S 64/96/128/192 px blobs f273d308cc71616ad6c006293ad8e965afd0ed5c, 72b60d2e088d0bb3966143ebde1bbc2230e1232d, f228c6187aef44ab328a91eede7329e15d9c8372, 697a2e1ddd730227de91b6da9c0280088a510974.
+Paths assets/mixengine/knobs/125A_MixEngine_Analog_{size}_{pixels}px_{scale}pct_128f.png. Verify actual bytes and dimensions; each strip vertical 128 frames. If a native graphics texture limit requires tiling, preserve frame order and pixels, verify all 128 frames at each scale, no lossy redraw or interpolation between frames.
+
+Status: layout and asset selection documented, no actual rendered static panel yet. Static panel must be completed and visually checked before GUI implementation, per central GUI guidelines. Native DSP unchanged.
