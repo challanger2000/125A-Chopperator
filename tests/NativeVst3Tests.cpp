@@ -1242,7 +1242,10 @@ void resourceAndLifecycle(const VST3::Hosting::Module::Ptr& module,bool expectFa
         auto frame=owned(new GuiFrame(host));auto view=owned(n.controller->createView(ViewType::kEditor));
         require(view&&view->setFrame(frame.get())==kResultOk,"resource editor");
         const auto result=view->attached(host,kPlatformTypeHWND);
-        if(expectFailure)require(result!=kResultOk,"corrupt resource must reject editor attach");
+        if(expectFailure){
+            require(result!=kResultOk,"corrupt resource must reject editor attach");
+            require(GetWindow(host,GW_CHILD)==nullptr&&frame->requests==0,"rejected resource no child or resize");
+        }
         else {
             require(result==kResultOk&&GetWindow(host,GW_CHILD)!=nullptr,"lifecycle native attach");
             pumpGui(25);

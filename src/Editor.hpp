@@ -382,6 +382,22 @@ public:
     }
     // Linear drag is the primary input, independent of the host preference.
     int32_t getKnobMode() const override{return VSTGUI::kLinearMode;}
+    Steinberg::tresult PLUGIN_API attached(void* parent,Steinberg::FIDString type) override{
+        if(!parent||!type||opened||isPlatformTypeSupported(type)!=Steinberg::kResultTrue)
+            return Steinberg::kResultFalse;
+        // The pinned SDK's VSTGUIEditor::attached returns EditorView::attached
+        // even when virtual open() returns false. Reject failed resource
+        // preflight before entering that SDK path; never report a blank editor.
+        if(!resourcesValid())return Steinberg::kResultFalse;
+        const auto result=AspectRatioVST3Editor::attached(parent,type);
+        if(result==Steinberg::kResultTrue&&!opened){
+            // Undo the base attachment bookkeeping, without closing an editor
+            // that never opened or decrementing its global idle-update count.
+            Steinberg::Vst::EditorView::removed();
+            return Steinberg::kResultFalse;
+        }
+        return result;
+    }
 protected:
     VSTGUI::CView* verifyView(VSTGUI::CView* view,const VSTGUI::UIAttributes& attrs,const VSTGUI::IUIDescription* desc) override{
         auto* result=AspectRatioVST3Editor::verifyView(view,attrs,desc);
@@ -414,21 +430,33 @@ protected:
         if(view==helpButton)helpButton=nullptr;
         AspectRatioVST3Editor::onViewRemoved(frame,view);
     }
-    bool PLUGIN_API open(void* parent,const VSTGUI::PlatformType& type) override{
+    bool resourcesValid(){
         // Fail explicitly rather than presenting a blank or low-resolution editor.
         auto* desc=getUIDescription();
+        if(!desc)return false;
         for(const char* name:{"knobL","knobS"}){
             auto* b=dynamic_cast<VSTGUI::CMultiFrameBitmap*>(desc->getBitmap(name));
             if(!b||!b->isLoaded()||b->getNumFrames()!=128||b->getNumFramesPerRow()!=16)return false;
             for(double scale:{.5,.75,1.,1.5}){
                 auto selected=b->getBestPlatformBitmapForScaleFactor(scale);
-                if(!selected||selected->getScaleFactor()!=scale)return false;
+                if(!selected||selected->getScaleFactor()!=scale||
+                   selected->getSize().x!=b->getWidth()*scale||selected->getSize().y!=b->getHeight()*scale){
+                    std::fprintf(stderr,"EDITOR_RESOURCE_REJECT %s scale=%.2f\n",name,scale);
+                    return false;
+                }
             }
         }
         auto* logo=desc->getBitmap("logo");
         if(!logo||!logo->isLoaded()||logo->getWidth()!=84||logo->getHeight()!=42)return false;
         auto logo3=logo->getBestPlatformBitmapForScaleFactor(3.);
-        if(!logo3||logo3->getScaleFactor()!=3.)return false;
+        if(!logo3||logo3->getScaleFactor()!=3.||logo3->getSize().x!=252||logo3->getSize().y!=126){
+            std::fprintf(stderr,"EDITOR_RESOURCE_REJECT logo scale=3\n");
+            return false;
+        }
+        return true;
+    }
+    bool PLUGIN_API open(void* parent,const VSTGUI::PlatformType& type) override{
+        if(!resourcesValid())return false;
         setZoomFactor(preferences.zoom);
         const bool ok=AspectRatioVST3Editor::open(parent,type);
         opened=ok;

@@ -93,15 +93,18 @@ jobs:
           $native = @(Get-ChildItem build -Recurse -File -Filter chopper_native_tests.exe | Where-Object { $_.FullName -match 'Release' })
           & $native[0].FullName $plugin --resource-positive
           if ($LASTEXITCODE -ne 0) { throw "Editor lifecycle failed" }
-          foreach ($name in @('logo_3x.png','knob_L_1.5x.png')) {
+          foreach ($name in @('logo_3x.png','knob_L_1.5x.png','logo.png','knob_S_0.75x.png')) {
             $folder = Join-Path $PWD ("negative-" + $name)
             New-Item -ItemType Directory -Force -Path $folder | Out-Null
             Copy-Item $plugin $folder -Recurse
             $copy = Join-Path $folder '125A Chopperator.vst3'
             $resource = Join-Path $copy ("Contents/Resources/" + $name)
-            [IO.File]::WriteAllBytes($resource,[byte[]](1,2,3,4))
+            if (-not (Test-Path $resource -PathType Leaf)) { throw "Negative fixture missing original asset: $name" }
+            if ($name -eq 'knob_S_0.75x.png') { Remove-Item $resource }
+            else { [IO.File]::WriteAllBytes($resource,[byte[]](1,2,3,4)) }
+            Write-Host "RESOURCE_NEGATIVE_FIXTURE $name"
             & $native[0].FullName $copy --resource-negative
-            if ($LASTEXITCODE -ne 0) { throw "Corrupt resource was not rejected: $name" }
+            if ($LASTEXITCODE -ne 0) { throw "Damaged or missing resource was not rejected: $name" }
           }
       - name: Programme fixture acquisition and native PCM checks
         shell: pwsh
