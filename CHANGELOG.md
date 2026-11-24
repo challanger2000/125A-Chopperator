@@ -12,3 +12,7 @@
 - Host-engine state mailbox, pending restore precedence and warm bypass.
 - Initial native Windows VST3 adapter: sample-accurate parameter queues, stereo/mono and 32/64-bit processing, versioned state, host tempo/meter; generic host controls only.
 - Add one Windows build/validator workflow; no release acceptance yet.
+
+## P004 / 0.4.0
+- Real packaged-VST3 native timing/automation/recall test harness (Windows CI gate).
+- Reset reused automation lane on initialization; preserve established DSP and parameter IDs.

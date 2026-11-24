@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.25)
-project(Chopperator VERSION 0.3.0 LANGUAGES CXX)
+project(Chopperator VERSION 0.4.0 LANGUAGES CXX)
 include(CTest)
 find_package(Threads REQUIRED)
 add_executable(chopper_core_tests tests/CoreTests.cpp)
@@ -42,4 +42,10 @@ if(CHOPPER_BUILD_VST3)
   target_link_libraries(Chopperator PRIVATE sdk)
   target_sources(Chopperator PRIVATE ${vst3sdk_SOURCE_DIR}/public.sdk/source/main/dllmain.cpp)
   smtg_target_configure_version_file(Chopperator)
+  add_executable(chopper_native_tests tests/NativeVst3Tests.cpp
+    ${vst3sdk_SOURCE_DIR}/public.sdk/source/vst/hosting/module_win32.cpp
+    ${vst3sdk_SOURCE_DIR}/public.sdk/source/vst/hosting/plugprovider.cpp
+    ${vst3sdk_SOURCE_DIR}/public.sdk/source/common/memorystream.cpp)
+  target_compile_features(chopper_native_tests PRIVATE cxx_std_17)
+  target_link_libraries(chopper_native_tests PRIVATE sdk_hosting)
 endif()
