@@ -23,7 +23,7 @@ def sha(path):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
-    for name in ("root", "out", "extract", "evidence"):
+    for name in ("root", "out", "extract", "evidence", "sdk"):
         p.add_argument("--"+name, type=Path, required=True)
     a = p.parse_args()
     root = a.root.resolve(strict=True)
@@ -34,8 +34,21 @@ def main():
              for f in bundle.rglob("*") if f.is_file()}
     if not {BUNDLE+"/"+r for r in REQUIRED} <= files.keys():
         raise ValueError("missing mandatory bundle resource or notice")
-    if any(not f.startswith(BUNDLE+"/Contents/") for f in files):
-        raise ValueError("unexpected bundle layout")
+    # Pinned Steinberg SDK adds these two Explorer icon metadata files
+    # at bundle root (SMTG_AddSMTGLibrary.cmake). Accept only the exact
+    # upstream pair, not arbitrary root entries or modified icon metadata.
+    template = a.sdk.resolve(strict=True) / "cmake/templates"
+    root_expected = {
+        BUNDLE+"/PlugIn.ico": sha(template / "VST_Logo_Steinberg.ico"),
+        BUNDLE+"/desktop.ini": sha(template / "desktop.ini.in"),
+    }
+    unexpected = sorted(f for f in files
+                        if not f.startswith(BUNDLE+"/Contents/") and f not in root_expected)
+    if unexpected:
+        raise ValueError("unexpected bundle layout: " + ", ".join(unexpected))
+    for name, expected_hash in root_expected.items():
+        if files.get(name) != expected_hash:
+            raise ValueError("missing or altered SDK folder icon metadata: " + name)
     if a.extract.exists():
         raise ValueError("extraction directory must be fresh")
     a.out.mkdir(parents=True, exist_ok=True)

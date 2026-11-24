@@ -180,7 +180,7 @@ jobs:
       - name: Verify exact candidate archive and extracted bundle
         shell: pwsh
         run: |
-          python tools/verify_candidate_archive.py --root artifact --out distribution --extract clean-archive --evidence evidence
+          python tools/verify_candidate_archive.py --root artifact --out distribution --extract clean-archive --evidence evidence --sdk build/_deps/vst3sdk-src
           if ($LASTEXITCODE -ne 0) { throw "Candidate archive verification failed" }
           $plugin = (Resolve-Path 'clean-archive/125A Chopperator.vst3').Path
           $validator = @(Get-ChildItem build -Recurse -File -Filter validator.exe | Where-Object { $_.FullName -match 'Release' })
