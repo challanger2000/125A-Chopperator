@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import stat
 
 def inventory(root):
     return {p.relative_to(root).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
@@ -33,13 +34,24 @@ def main():
                               ("bad_icon","missing or altered SDK folder icon metadata")):
             folder=base/name
             copy=folder/"stage"
-            shutil.copytree(root,copy)
+            shutil.copytree(root,copy,copy_function=shutil.copyfile)
             bundle=copy/"125A Chopperator.vst3"
             res=bundle/"Contents/Resources"
             if name=="missing_moduleinfo": (res/"moduleinfo.json").unlink()
             elif name=="extra_contents": (res/"unapproved.txt").write_text("fixture")
             elif name=="missing_notice": (res/"VSTGUI-LICENSE.txt").unlink()
-            else: (bundle/"PlugIn.ico").write_bytes(b"wrong icon")
+            else:
+                # Windows SDK marks folder metadata as SYSTEM. Use fresh
+                # byte-only copies above, and clear protection only on the
+                # isolated fixture, not the actual distributable.
+                icon=bundle/"PlugIn.ico"
+                if sys.platform=="win32":
+                    subprocess.run(["attrib","-s","-h","-r",str(icon)],
+                                   check=True,capture_output=True,timeout=10)
+                icon.chmod(stat.S_IREAD|stat.S_IWRITE)
+                icon.write_bytes(b"wrong icon")
+                if icon.read_bytes()!=b"wrong icon":
+                    raise RuntimeError("icon mutation not established")
             proc=subprocess.run([sys.executable,str(gate),"--root",str(copy),"--sdk",str(sdk),
                 "--out",str(folder/"out"),"--extract",str(folder/"extract"),
                 "--evidence",str(folder/"evidence")],capture_output=True,text=True,timeout=30)
@@ -51,7 +63,7 @@ def main():
         # A structurally valid JSON with false class identity must fail
         # the official SDK comparison with the actual factory.
         copy=base/"metadata"/"stage"
-        shutil.copytree(root,copy)
+        shutil.copytree(root,copy,copy_function=shutil.copyfile)
         bundle=copy/"125A Chopperator.vst3"
         res=bundle/"Contents/Resources/moduleinfo.json"
         # SDK JSON accepts trailing commas; change exactly the known class
