@@ -188,6 +188,8 @@ jobs:
           if ($infoTool.Count -ne 1) { throw "Exact SDK moduleinfotool unavailable" }
           & $infoTool[0].FullName -validate -path (Resolve-Path 'artifact/125A Chopperator.vst3').Path
           if ($LASTEXITCODE -ne 0) { throw "Module metadata invalid" }
+          python tools/test_archive_negatives.py --root artifact --sdk build/_deps/vst3sdk-src --infotool $infoTool[0].FullName --evidence evidence/archive-negatives
+          if ($LASTEXITCODE -ne 0) { throw "Archive negative controls failed" }
           python tools/verify_candidate_archive.py --root artifact --out distribution --extract clean-archive --evidence evidence --sdk build/_deps/vst3sdk-src
           if ($LASTEXITCODE -ne 0) { throw "Candidate archive verification failed" }
           $plugin = (Resolve-Path 'clean-archive/125A Chopperator.vst3').Path

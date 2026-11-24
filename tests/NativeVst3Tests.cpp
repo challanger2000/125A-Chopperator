@@ -420,7 +420,11 @@ public:
     std::array<double,14> last{};
     Native* relay=nullptr;
     int dirtyCalls=0;
-    tresult PLUGIN_API setDirty(TBool state) override{if(state)++dirtyCalls;return kResultOk;}
+    std::function<void()> dirtyIntercept;
+    tresult PLUGIN_API setDirty(TBool state) override{
+        if(state){++dirtyCalls;if(dirtyIntercept){auto cb=std::move(dirtyIntercept);dirtyIntercept={};cb();}}
+        return kResultOk;
+    }
     tresult PLUGIN_API requestOpenEditor(FIDString) override{return kResultFalse;}
     tresult PLUGIN_API startGroupEdit() override{return kResultOk;}
     tresult PLUGIN_API finishGroupEdit() override{return kResultOk;}
@@ -536,7 +540,7 @@ void guiAudioChain(const VST3::Hosting::Module::Ptr& module,Native& n,GuiHandler
 }
 
 
-void valueEntryContract(Native& n,GuiHandler& handler,HWND child){
+void valueEntryContract(const VST3::Hosting::Module::Ptr& module,Native& n,GuiHandler& handler,HWND child){
     struct Entry{ParamID id;int x,y;const wchar_t* text;double expected;};
     const Entry entries[]{
         {100,138,387,L"1/32",5./6},{101,366,387,L"8",3./6},{102,594,387,L"1/64",1},
@@ -589,6 +593,8 @@ void valueEntryContract(Native& n,GuiHandler& handler,HWND child){
                 handler.edits[7]-edits[7]==(commit?1:0),"text commit/cancel after automation");
     }
     for(int mode=0;mode<4;++mode){
+        n.start(48000,kSample64,2);
+        setConstant(n,6,0,.5,0,0);
         require(n.controller->setParamNormalized(107,.5)==kResultOk,"recall text baseline");pumpGui(80);
         SendMessageW(child,WM_LBUTTONDBLCLK,MK_LBUTTON,MAKELPARAM(404,509));
         SendMessageW(child,WM_LBUTTONUP,0,MAKELPARAM(404,509));pumpGui(80);
@@ -596,21 +602,40 @@ void valueEntryContract(Native& n,GuiHandler& handler,HWND child){
         require(field&&field!=child&&GetClassNameW(field,cls,64)&&_wcsicmp(cls,L"Edit")==0,"recall edit field");
         require(SetWindowTextW(field,L"37.25")!=0,"recall local text");
         auto state=n.save();const double width=.8;std::memcpy(state.data()+8+7*8,&width,8);
-        if(mode==3)state.resize(119);
+        auto expected=state;
+        if(mode==3){
+            const double typed=.3725;std::memcpy(expected.data()+8+7*8,&typed,8);state.resize(119);
+        }
+        require(n.load(state)==(mode!=3),"processor recall while text open");
         MemoryStream stream(state.data(),static_cast<TSize>(state.size()));
         const auto edits=handler.edits,begins=handler.begins,ends=handler.ends;
         require((n.controller->setComponentState(&stream)==kResultOk)==(mode!=3),"recall while editing");
         pumpGui(80);
+        handler.relay=&n;
         if(mode==2)SetFocus(child);
         else SendMessageW(field,WM_KEYDOWN,mode==1?VK_ESCAPE:VK_RETURN,1);
-        pumpGui(100);
+        pumpGui(100);handler.relay=nullptr;
         require(!IsWindow(field)||GetFocus()!=field,"recall text closes");
         require(std::abs(n.controller->getParamNormalized(107)-(mode==3?.3725:.8))<1e-9,"stale recall text never commits");
         for(std::size_t i=0;i<edits.size();++i){
             const int delta=mode==3&&i==7?1:0;
             require(handler.edits[i]-edits[i]==delta&&handler.begins[i]-begins[i]==delta&&handler.ends[i]-ends[i]==delta,"recall text edit gestures");
         }
+        require(n.save()==expected,"recall text actual processor state");
+        // Restart both processors at the same saved state, then require
+        // exact audible modulation rather than a trivially dry comparison.
+        n.stop();n.start(48000,kSample64,2);
+        Native reference(module);require(reference.load(expected),"recall reference state");
+        reference.start(48000,kSample64,2);
+        bool wet=false,dry=false;
+        for(int i=0;i<8192;i+=512){
+            const auto pcm=n.render<double>(512),ref=reference.render<double>(512);
+            require(pcm==ref,"recall text exact PCM");
+            for(double x:pcm){wet|=x<.1;dry|=x>.9;}
+        }
+        require(wet&&dry,"recall PCM nontrivial modulation");n.stop();
     }
+    std::cout<<"NATIVE_P009_RECALL_TEXT_PCM_PASS\n";
     std::cout<<"NATIVE_P009_RECALL_TEXT_EPOCH_PASS\n";
     std::cout<<"NATIVE_P009_TEXT_AUTOMATION_PASS\n";
     std::cout<<"NATIVE_DOUBLE_CLICK_ALL_10_READOUTS_PASS\n";
@@ -900,7 +925,7 @@ void guiContract(const VST3::Hosting::Module::Ptr& module,const std::filesystem:
             {{100,468,104}},{{252,468,105}},{{120,546,106}},{{404,468,107}},{{556,468,108}},{{708,468,109}},
             {{860,468,110}},{{610,34,111}},{{820,34,112}}}};
         for(const auto& hit:hits){ParamID id=0;require(finder->findParameter(hit[0],hit[1],id)==kResultTrue&&id==static_cast<ParamID>(hit[2]),"native parameter hit mapping");}
-        if(cycle==0){guiAudioChain(module,n,*handler,child);valueEntryContract(n,*handler,child);}
+        if(cycle==0){guiAudioChain(module,n,*handler,child);valueEntryContract(module,n,*handler,child);}
         require(n.controller->setParamNormalized(111,0)==kResultOk,"host active off");
         require(n.controller->setParamNormalized(106,0)==kResultOk,"host rect");
         require(n.controller->setParamNormalized(112,0)==kResultOk,"host one shot");pumpGui(80);
@@ -1162,9 +1187,35 @@ void liveUIAudit(const VST3::Hosting::Module::Ptr& module){
         const int width=static_cast<int>(std::floor(960*z*double(1.28f)));
         const int height=static_cast<int>(std::floor(576*z*double(1.28f)));
         geom(a.get(),ca,width,height);saved(z,0);
+        fa->deny=true;
+        require(dpi->setContentScaleFactor(1.37f)!=kResultOk,"fractional DPI rejected");pumpGui(60);
+        geom(a.get(),ca,width,height);saved(z,0);fa->deny=false;
         require(dpi->setContentScaleFactor(1.f)==kResultOk,"fractional DPI reset");pumpGui(80);
         geom(a.get(),ca,int(960*z),int(576*z));saved(z,0);
     }
+    load(1.25,0);
+    const auto reopenPeer=[&](){
+        DestroyWindow(hb);hb=makeHost();fb=owned(new GuiFrame(hb));
+        b=owned(n.controller->createView(ViewType::kEditor));
+        require(b&&b->setFrame(fb.get())==kResultOk&&b->attached(hb,kPlatformTypeHWND)==kResultOk,"reopen peer");
+        ShowWindow(hb,SW_SHOWNA);pumpGui(100);cb=GetWindow(hb,GW_CHILD);require(cb!=nullptr,"reopened peer child");
+        geom(b.get(),cb,960,576);
+    };
+    const auto oldPeerRequests=fb->requests;
+    fa->intercept=[&](IPlugView* v,ViewRect* r){
+        require(v==a.get()&&b->removed()==kResultOk&&b->setFrame(nullptr)==kResultOk,"reentrant later view detach");
+        return fa->resizeView(v,r);
+    };
+    load(1.,0);
+    require(!IsWindow(cb)&&fb->requests==oldPeerRequests,"removed later peer skipped");
+    geom(a.get(),ca,960,576);reopenPeer();
+    handler->dirtyIntercept=[&]{
+        require(b->removed()==kResultOk&&b->setFrame(nullptr)==kResultOk,"dirty notification peer detach");
+    };
+    clickGui(ca,508,32);
+    require(!IsWindow(cb)&&handler->dirtyCalls==4,"dirty detach exactly once");
+    saved(1.,1);reopenPeer();
+    std::cout<<"NATIVE_P009_LATER_VIEW_DIRTY_DETACH_PASS\n";
     load(1.25,0);
     // Synchronous host detach of the first view during its own resize
     // notification. Later registered peer must still receive the recall.
@@ -1179,7 +1230,7 @@ void liveUIAudit(const VST3::Hosting::Module::Ptr& module){
     std::cout<<"NATIVE_P009_FRACTIONAL_DPI_REENTRANT_DETACH_PASS\n";
     DestroyWindow(ha);pumpGui(80);require(!IsWindow(ca)&&IsWindow(cb),"only first child closed");
     load(1.,1);geom(b.get(),cb,960,576);saved(1.,1);
-    require(handler->dirtyCalls==3,"surviving view recall not dirty");
+    require(handler->dirtyCalls==4,"surviving view recall not dirty");
     require(b->removed()==kResultOk&&b->setFrame(nullptr)==kResultOk,"second close");DestroyWindow(hb);
     require(n.controller->setComponentHandler(nullptr)==kResultOk,"clear live handler");
     UnregisterClassW(wc.lpszClassName,inst);
