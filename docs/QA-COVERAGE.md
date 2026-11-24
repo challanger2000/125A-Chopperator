@@ -63,3 +63,7 @@ Owner double-click entry requirement: SDK CTextEdit fields for all ten knob read
 Updated native composed-pixel help test for centered unboxed text: baseline exact when off/leave, two different visible glyph patterns, centered pixel bounds and no solid panel. Pending CI.
 
 45445714729 full workflow PASS, including native double-click numeric entry and centered unboxed help. New vector-only glass faceplate styling behind existing controls; run complete regression and inspect real native capture, not generated concept art. Pending.
+
+
+## 2026-11-24 adversarial audit
+See [P008 adversarial audit](P008-ADVERSARIAL-AUDIT.md). Exact Glass V2 build remains technically green; new local adversarial source probes detect malformed signed input and unrepresentable sample rate; DPI/live UI recall source findings and license notice package gap. PARTIAL / NOT VERIFIED, release NO-GO. No production change. Codex and full Lab evidence pending.
