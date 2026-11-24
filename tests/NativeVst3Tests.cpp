@@ -626,6 +626,32 @@ void guiContract(const VST3::Hosting::Module::Ptr& module,const std::filesystem:
             }
             if(bitmap)DeleteObject(bitmap);DeleteDC(dc);ReleaseDC(child,screen);
         }
+        if(cycle==1){
+            // Save a nondefault UI state through the actual editor and VST3
+            // controller, then prove a fresh instance recalls it pre-attach.
+            clickGui(child,508,32);
+            ViewRect savedSize{0,0,1200,720};
+            require(view->checkSizeConstraint(&savedSize)==kResultOk&&frame->resizeView(view.get(),&savedSize)==kResultOk,"save nondefault UI size");
+            pumpGui(80);
+            MemoryStream savedUI;require(n.controller->getState(&savedUI)==kResultOk&&savedUI.getSize()==20,"controller UI state save");
+            std::vector<char> bytes(savedUI.getData(),savedUI.getData()+savedUI.getSize());
+            Native fresh(module);
+            MemoryStream input(bytes.data(),static_cast<TSize>(bytes.size()));
+            require(fresh.controller->setState(&input)==kResultOk,"fresh controller UI restore");
+            auto recalled=owned(fresh.controller->createView(ViewType::kEditor));ViewRect recalledSize{};
+            require(recalled&&recalled->getSize(&recalledSize)==kResultOk&&recalledSize.getWidth()==1200&&recalledSize.getHeight()==720,"fresh recalled editor dimensions");
+            auto preset=n.save();MemoryStream presetStream(preset.data(),static_cast<TSize>(preset.size()));
+            require(fresh.controller->setComponentState(&presetStream)==kResultOk,"preset component state");
+            MemoryStream afterPreset;require(fresh.controller->getState(&afterPreset)==kResultOk&&afterPreset.getSize()==20&&std::memcmp(afterPreset.getData(),bytes.data(),20)==0,"preset leaves UI preferences unchanged");
+            for(std::size_t i=0;i<bytes.size();++i){
+                MemoryStream truncated(bytes.data(),static_cast<TSize>(i));
+                require(fresh.controller->setState(&truncated)!=kResultOk,"truncated UI state rejected");
+                MemoryStream after;require(fresh.controller->getState(&after)==kResultOk&&after.getSize()==20&&std::memcmp(after.getData(),bytes.data(),20)==0,"invalid UI state atomic rollback");
+            }
+            auto sameInstance=owned(n.controller->createView(ViewType::kEditor));
+            require(sameInstance&&sameInstance->getSize(&recalledSize)==kResultOk&&recalledSize.getWidth()==1200,"editor reopen retains zoom");
+            std::cout<<"NATIVE_UI_STATE_RECALL_PASS\n";
+        }
         require(view->removed()==kResultOk&&view->setFrame(nullptr)==kResultOk,"editor removal");DestroyWindow(host);pumpGui(50);
     }
     require(n.controller->setComponentHandler(nullptr)==kResultOk,"clear handler");

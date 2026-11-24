@@ -44,3 +44,4 @@
 - P008 exact native GUI and reset checks passed; added rendered pixel-level dynamic timing display oracle for seven relevant controls, not a static screenshot test.
 - Fix stale timing display detected by native pixel oracle; parameter-dependent refresh.
 - Add switchable contextual ? help and actual bottom-right proportional resize grip.
+- Persist per-instance GUI zoom and ? help in separate VST3 controller state, independent of audio presets.

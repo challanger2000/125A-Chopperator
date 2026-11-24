@@ -16,6 +16,7 @@
 #include <array>
 
 namespace chopper {
+struct EditorPreferences { double zoom=1.; bool help=false; };
 // Format only the on-panel readout. Preserve SDK parameter precision,
 // automation, state serialization and the DSP mapping without changes.
 class PercentLabel final:public VSTGUI::CTextLabel{
@@ -137,7 +138,7 @@ private:
 // Editor-only controls: no VST3 parameter, automation or DSP mutation.
 class HelpButton final:public VSTGUI::CView{
 public:
-    HelpButton(std::function<void(bool)> cb):CView(VSTGUI::CRect(496,20,520,44)),change(std::move(cb)){}
+    HelpButton(bool initial,std::function<void(bool)> cb):CView(VSTGUI::CRect(496,20,520,44)),change(std::move(cb)),enabled(initial){}
     void draw(VSTGUI::CDrawContext* c) override{
         using namespace VSTGUI;
         auto r=getViewSize();r.inset(2,2);
@@ -188,8 +189,11 @@ private:
 
 class Editor final:public VSTGUI::AspectRatioVST3Editor{
 public:
-    explicit Editor(Steinberg::Vst::EditController* c):AspectRatioVST3Editor(c,"view","chopper.uidesc"){
-        setMinZoomFactor(.75);enableTooltips(false);
+    explicit Editor(Steinberg::Vst::EditController* c,EditorPreferences& p):AspectRatioVST3Editor(c,"view","chopper.uidesc"),preferences(p){
+        setMinZoomFactor(.75);enableTooltips(p.help);
+        setZoomFactor(p.zoom);
+        rect.right=static_cast<Steinberg::int32>(std::lround(960*p.zoom));
+        rect.bottom=static_cast<Steinberg::int32>(std::floor(rect.right*.6));
     }
     // Linear drag is the primary input, independent of the host preference.
     int32_t getKnobMode() const override{return VSTGUI::kLinearMode;}
@@ -237,30 +241,35 @@ protected:
         }
         auto* logo=desc->getBitmap("logo");
         if(!logo||!logo->isLoaded()||logo->getWidth()!=84||logo->getHeight()!=42)return false;
-        return AspectRatioVST3Editor::open(parent,type);
+        const bool ok=AspectRatioVST3Editor::open(parent,type);
+        opened=ok;return ok;
     }
+    void PLUGIN_API close() override{opened=false;AspectRatioVST3Editor::close();}
     Steinberg::tresult PLUGIN_API onSize(Steinberg::ViewRect* r) override{
         if(!r)return Steinberg::kInvalidArgument;
-        // SDK AspectRatioVST3Editor applies zoom but does not update the
-        // CPluginView rectangle. Forward the accepted geometry to the
-        // standard VST3Editor path as well; it handles resize reentry.
-        // Recalculate also for hosts that directly call onSize.
-        auto requested=*r;
-        if(checkSizeConstraint(&requested)!=Steinberg::kResultTrue)return Steinberg::kResultFalse;
-        if(requested.getWidth()!=r->getWidth()||requested.getHeight()!=r->getHeight())return Steinberg::kResultFalse;
-        const auto result=AspectRatioVST3Editor::onSize(r);
-        if(result!=Steinberg::kResultTrue)return result;
-        return VSTGUI::VST3Editor::onSize(r);
+        // On initial attachment and reentrant host acknowledgement, use
+        // the SDK base path without overwriting the saved editor preferences.
+        if(!opened||resizing)return VSTGUI::VST3Editor::onSize(r);
+        const auto oldZoom=getZoomFactor();
+        const auto factor=std::clamp(r->getWidth()/(960.*getContentScaleFactor()),.75,1.5);
+        if(std::abs(r->getHeight()-r->getWidth()*.6)>1.01)return Steinberg::kResultFalse;
+        resizing=true;
+        setZoomFactor(factor);
+        const auto result=VSTGUI::VST3Editor::onSize(r);
+        if(result==Steinberg::kResultTrue)preferences.zoom=factor;
+        else setZoomFactor(oldZoom);
+        resizing=false;return result;
     }
     Steinberg::tresult PLUGIN_API checkSizeConstraint(Steinberg::ViewRect* r) override{
         if(!r)return Steinberg::kInvalidArgument;
-        const auto maxWidth=static_cast<Steinberg::int32>(std::lround(1440*getContentScaleFactor()));
-        if(r->getWidth()>maxWidth)r->right=r->left+maxWidth;
-        return AspectRatioVST3Editor::checkSizeConstraint(r);
+        const auto scale=getContentScaleFactor();
+        const auto w=std::clamp(r->getWidth(),static_cast<Steinberg::int32>(std::lround(720*scale)),static_cast<Steinberg::int32>(std::lround(1440*scale)));
+        r->right=r->left+w;r->bottom=r->top+static_cast<Steinberg::int32>(std::floor(w*.6));
+        return Steinberg::kResultTrue;
     }
     VSTGUI::CView* createView(const VSTGUI::UIAttributes& attrs,const VSTGUI::IUIDescription* desc) override{
         const auto* name=attrs.getAttributeValue("custom-view-name");
-        if(name&&*name=="HelpButton")return new HelpButton([this](bool enabled){enableTooltips(enabled);});
+        if(name&&*name=="HelpButton")return new HelpButton(preferences.help,[this](bool enabled){preferences.help=enabled;enableTooltips(enabled);});
         if(name&&*name=="ResizeGrip")return new ResizeGrip([this]{return getZoomFactor()*getContentScaleFactor();},[this](double width){
             Steinberg::ViewRect r{0,0,static_cast<Steinberg::int32>(std::lround(std::clamp(width,720*getContentScaleFactor(),1440*getContentScaleFactor()))),0};
             r.bottom=static_cast<Steinberg::int32>(std::floor(r.right*.6));
@@ -270,5 +279,8 @@ protected:
         if(name&&*name=="ChopperPreview")return new Preview(VSTGUI::CRect(24,72,936,210),getController());
         return AspectRatioVST3Editor::createView(attrs,desc);
     }
+private:
+    EditorPreferences& preferences;
+    bool opened=false,resizing=false;
 };
 }
