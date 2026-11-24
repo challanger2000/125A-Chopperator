@@ -65,7 +65,7 @@ jobs:
           $plugin = Resolve-Path 'artifact/125A Chopperator.vst3'
           $native = @(Get-ChildItem build -Recurse -File -Filter chopper_native_tests.exe | Where-Object { $_.FullName -match 'Release' })
           $resources = Join-Path $plugin 'Contents/Resources'
-          foreach ($name in @('chopper.uidesc','logo.png','logo_3x.png','knob_L_100.png','knob_L_150.png','knob_L_200.png','knob_L_300.png','knob_S_100.png','knob_S_150.png','knob_S_200.png','knob_S_300.png')) {
+          foreach ($name in @('chopper.uidesc','logo.png','logo_3x.png','knob_L_0.5x.png','knob_L_0.75x.png','knob_L_200.png','knob_L_1.5x.png','knob_S_0.5x.png','knob_S_0.75x.png','knob_S_200.png','knob_S_1.5x.png')) {
             if (-not (Test-Path (Join-Path $resources $name) -PathType Leaf)) { throw "Missing staged GUI resource $name" }
           }
           & $native[0].FullName $plugin.Path --editor (Resolve-Path evidence).Path

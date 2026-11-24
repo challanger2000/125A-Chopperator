@@ -72,9 +72,30 @@ private:
 class Editor final:public VSTGUI::AspectRatioVST3Editor{
 public:
     explicit Editor(Steinberg::Vst::EditController* c):AspectRatioVST3Editor(c,"view","chopper.uidesc"){
-        setMinZoomFactor(.75);enableTooltips(true);
+        setMinZoomFactor(.75);enableTooltips(true);setIdleRate(33);
     }
 protected:
+    bool PLUGIN_API open(void* parent,const VSTGUI::PlatformType& type) override{
+        // Fail explicitly rather than presenting a blank or low-resolution editor.
+        auto* desc=getUIDescription();
+        for(const char* name:{"knobL","knobS"}){
+            auto* b=dynamic_cast<VSTGUI::CMultiFrameBitmap*>(desc->getBitmap(name));
+            if(!b||!b->isLoaded()||b->getNumFrames()!=128||b->getNumFramesPerRow()!=16)return false;
+            for(double scale:{.5,.75,1.,1.5}){
+                auto selected=b->getBestPlatformBitmapForScaleFactor(scale);
+                if(!selected||selected->getScaleFactor()!=scale)return false;
+            }
+        }
+        auto* logo=desc->getBitmap("logo");
+        if(!logo||!logo->isLoaded()||logo->getWidth()!=84||logo->getHeight()!=42)return false;
+        return AspectRatioVST3Editor::open(parent,type);
+    }
+    Steinberg::tresult PLUGIN_API checkSizeConstraint(Steinberg::ViewRect* r) override{
+        if(!r)return Steinberg::kInvalidArgument;
+        const auto maxWidth=static_cast<Steinberg::int32>(std::lround(1440*getContentScaleFactor()));
+        if(r->getWidth()>maxWidth)r->right=r->left+maxWidth;
+        return AspectRatioVST3Editor::checkSizeConstraint(r);
+    }
     VSTGUI::CView* createView(const VSTGUI::UIAttributes& attrs,const VSTGUI::IUIDescription* desc) override{
         const auto* name=attrs.getAttributeValue("custom-view-name");
         if(name&&*name=="ChopperPreview")return new Preview(VSTGUI::CRect(24,72,936,210),getController());

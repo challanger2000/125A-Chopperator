@@ -44,8 +44,8 @@ if(CHOPPER_BUILD_VST3)
   set(CHOPPER_GUI_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/resources/chopper.uidesc
     ${CHOPPER_GUI_DIR}/logo.png ${CHOPPER_GUI_DIR}/logo_3x.png
-    ${CHOPPER_GUI_DIR}/knob_L_100.png ${CHOPPER_GUI_DIR}/knob_L_150.png ${CHOPPER_GUI_DIR}/knob_L_200.png ${CHOPPER_GUI_DIR}/knob_L_300.png
-    ${CHOPPER_GUI_DIR}/knob_S_100.png ${CHOPPER_GUI_DIR}/knob_S_150.png ${CHOPPER_GUI_DIR}/knob_S_200.png ${CHOPPER_GUI_DIR}/knob_S_300.png)
+    ${CHOPPER_GUI_DIR}/knob_L_0.5x.png ${CHOPPER_GUI_DIR}/knob_L_0.75x.png ${CHOPPER_GUI_DIR}/knob_L_200.png ${CHOPPER_GUI_DIR}/knob_L_1.5x.png
+    ${CHOPPER_GUI_DIR}/knob_S_0.5x.png ${CHOPPER_GUI_DIR}/knob_S_0.75x.png ${CHOPPER_GUI_DIR}/knob_S_200.png ${CHOPPER_GUI_DIR}/knob_S_1.5x.png)
   # SDK resource helper emits an unquoted VS macro for package paths with
   # spaces. Use the actual binary directory and VERBATIM commands instead.
   foreach(asset IN LISTS CHOPPER_GUI_FILES)

@@ -382,6 +382,12 @@ void clickGui(HWND child,int x,int y){
     SendMessageW(child,WM_LBUTTONDOWN,MK_LBUTTON,MAKELPARAM(x,y));
     SendMessageW(child,WM_LBUTTONUP,0,MAKELPARAM(x,y));pumpGui(60);
 }
+void wheelGui(HWND child,int x,int y){
+    SendMessageW(child,WM_MOUSEMOVE,0,MAKELPARAM(x,y));
+    POINT pt{x,y};ClientToScreen(child,&pt);
+    SendMessageW(child,WM_MOUSEWHEEL,MAKEWPARAM(0,WHEEL_DELTA),MAKELPARAM(pt.x,pt.y));
+    pumpGui(100);
+}
 void guiContract(const VST3::Hosting::Module::Ptr& module,const std::filesystem::path& folder){
     Native n(module);auto handler=owned(new GuiHandler);
     require(n.controller->setComponentHandler(handler.get())==kResultOk,"gui handler");
@@ -414,6 +420,13 @@ void guiContract(const VST3::Hosting::Module::Ptr& module,const std::filesystem:
         clickGui(child,650,34);clickGui(child,920,34);clickGui(child,844,546);
         require(n.controller->getParamNormalized(111)==1&&n.controller->getParamNormalized(112)==1&&n.controller->getParamNormalized(106)==1,"native segmented controls");
         for(int id:{106,111,112})require(handler->begins[id-100]>0&&handler->edits[id-100]>0&&handler->ends[id-100]==handler->begins[id-100],"balanced edit notifications");
+        require(n.controller->setParamNormalized(100,1./6)==kResultOk,"host start 1/2");
+        require(n.controller->setParamNormalized(103,3./65)==kResultOk,"host length 2 bars");
+        pumpGui(100);
+        wheelGui(child,138,314);wheelGui(child,822,314);
+        require(std::abs(n.controller->getParamNormalized(100)-2./6)<1e-8,"one wheel notch next note division");
+        require(std::abs(n.controller->getParamNormalized(103)-4./65)<1e-8,"one wheel notch next length");
+        pumpGui(700);
         // Actual editor resize negotiation; no claim of Studio Pro support.
         require(view->canResize()==kResultTrue,"editor resizable");
         ViewRect scaled{0,0,720,432};require(view->checkSizeConstraint(&scaled)==kResultOk,"resize constraint");
@@ -448,7 +461,7 @@ void guiContract(const VST3::Hosting::Module::Ptr& module,const std::filesystem:
     }
     require(n.controller->setComponentHandler(nullptr)==kResultOk,"clear handler");
     UnregisterClassW(wc.lpszClassName,inst);
-    std::cout<<"NATIVE_EDITOR_CONTRACT_PASS two attach cycles, 13 hit mappings, three segment edits, resize roundtrip\n";
+    std::cout<<"NATIVE_EDITOR_CONTRACT_PASS two attach cycles, 13 hit mappings, three segment edits, discrete wheel steps, resize roundtrip\n";
 }
 
 int main(int argc,char** argv){

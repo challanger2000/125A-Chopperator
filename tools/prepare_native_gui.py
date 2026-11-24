@@ -25,7 +25,8 @@ def main():
             if ImageChops.difference(frame.getchannel("A"),rebuilt.getchannel("A")).getbbox():
                 raise RuntimeError(f"Crop clips original visible pixels: {family} {scale} {i}")
             atlas.paste(crop,((i%16)*half,(i//16)*half))
-        name=f"knob_{family}_{scale}.png"
+        suffix={100:"0.5x",150:"0.75x",200:"200",300:"1.5x"}[scale]
+        name=f"knob_{family}_{suffix}.png"
         atlas.save(out/name)
         check=Image.open(out/name).convert("RGBA")
         for i in range(128):
