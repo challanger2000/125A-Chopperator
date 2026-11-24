@@ -42,3 +42,5 @@
 - Owner display correction: filled rhythmic impulse preview with shape contour; screenshot at agreed defaults rather than arbitrary QA state.
 - Exact owner SVG display reference: equal-height orange timing rectangles, variable width and spacing, labels below, dashed vertical grid. Supersedes filled envelope interpretation. No DSP changes.
 - P008 exact native GUI and reset checks passed; added rendered pixel-level dynamic timing display oracle for seven relevant controls, not a static screenshot test.
+- Fix stale timing display detected by native pixel oracle; parameter-dependent refresh.
+- Add switchable contextual ? help and actual bottom-right proportional resize grip.

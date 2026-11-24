@@ -38,3 +38,5 @@ P008 adds all-ten-knob Ctrl+left native reset tests; pending until actual CI. No
 
 ## P008 verified delta
 Run 45312830818 success: 56/0/0 independent tester, all-ten-knob Ctrl+left reset twice, native screenshot reviewed against owner timing diagram reference, existing DSP regressions pass. Actual timing preview pixel oracle on all seven relevant left-drag controls now added; pending run. No full audit or DAW acceptance yet.
+
+P008 reactive oracle 45314075565 FAIL: START change retained exactly baseline pixels; direct parameter dependency refresh correction and repeat gate pending. New help and native corner-drag controls added; tooltip runtime verification, resize at intermediate sizes, scaled hit behavior and DAW test pending.

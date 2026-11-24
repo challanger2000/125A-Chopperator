@@ -29,6 +29,7 @@
 <template name="view" class="CViewContainer" origin="0, 0" size="960, 576" minSize="720, 432" maxSize="1440, 864" background-color="Panel" transparent="false">
 <view class="CView" origin="24, 10" size="84, 42" bitmap="logo" mouse-enabled="false"/>
 <view class="CTextLabel" origin="120, 10" size="404, 42" title="CHOPPERATOR" font="Title" font-color="Muted" text-alignment="center" transparent="true" mouse-enabled="false"/>
+<view class="CView" custom-view-name="HelpButton" origin="496, 20" size="24, 24" mouse-enabled="true"/>
 <view class="CTextLabel" origin="534, 4" size="88, 12" title="ACTIVE" font="Label" font-color="Muted" text-alignment="center" transparent="true" mouse-enabled="false"/>
 <view class="CSegmentButton" origin="534, 18" size="156, 32" control-tag="P111" segment-names="OFF,ON" selection-mode="Single" style="horizontal" font="Label" text-color="Text" text-color-highlighted="Amber" frame-color="Frame" frame-width="1" round-radius="6" gradient="Button" gradient-highlighted="Selected"/>
 <view class="CSegmentButton" origin="704, 18" size="232, 32" control-tag="P112" segment-names="ONE SHOT,LOOP" selection-mode="Single" style="horizontal" font="Label" text-color="Text" text-color-highlighted="Amber" frame-color="Frame" frame-width="1" round-radius="6" gradient="Button" gradient-highlighted="Selected"/>
@@ -66,4 +67,5 @@
 <view class="CAnimKnob" origin="828, 436" size="64, 64" bitmap="knobS" control-tag="P110" wheel-inc-value="0.01" transparent="true"/>
 <view class="CTextLabel" custom-view-name="PercentReadout" origin="788, 500" size="144, 18" title="" font="Label" font-color="Text" text-alignment="center" transparent="true" mouse-enabled="false" control-tag="P110"/>
 <view class="CSegmentButton" origin="24, 528" size="912, 36" control-tag="P106" segment-names="RECT,SAW UP,SAW DOWN,TRIANGLE,SINE" selection-mode="Single" style="horizontal" font="Label" text-color="Text" text-color-highlighted="Amber" frame-color="Frame" frame-width="1" round-radius="6" gradient="Button" gradient-highlighted="Selected"/>
+<view class="CView" custom-view-name="ResizeGrip" origin="940, 556" size="20, 20" mouse-enabled="true"/>
 </template></vstgui-ui-description>

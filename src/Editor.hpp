@@ -4,6 +4,10 @@
 #include "vstgui/lib/cdrawcontext.h"
 #include "vstgui/lib/cbitmap.h"
 #include "vstgui/lib/cfont.h"
+#include "vstgui/lib/cframe.h"
+#include "vstgui/lib/events.h"
+#include "base/source/fobject.h"
+#include <functional>
 #include "vstgui/lib/controls/cknob.h"
 #include "vstgui/lib/controls/ctextlabel.h"
 #include <charconv>
@@ -36,11 +40,29 @@ public:
     }
 };
 class Preview final:public VSTGUI::CView {
+    static constexpr std::array<Param,7> ids{Param::start,Param::mid,Param::end,Param::length,Param::position,Param::curve,Param::width};
+    class Observer final:public Steinberg::FObject {
+    public:
+        explicit Observer(Preview& p):preview(p){}
+        void PLUGIN_API update(Steinberg::FUnknown*,Steinberg::int32 message) override{
+            if(message==Steinberg::IDependent::kChanged)preview.refresh();
+        }
+    private:
+        Preview& preview;
+    };
 public:
-    Preview(const VSTGUI::CRect& r,Steinberg::Vst::EditController* c):CView(r),controller(c){
-        setMouseEnabled(false);setWantsIdle(true);refresh();
+    Preview(const VSTGUI::CRect& r,Steinberg::Vst::EditController* c):CView(r),controller(c),observer(*this){
+        setMouseEnabled(false);refresh();
     }
-    void onIdle() override { refresh(); }
+    bool attached(VSTGUI::CView* parent) override{
+        if(!CView::attached(parent))return false;
+        for(auto id:ids)if(auto* p=controller->getParameterObject(static_cast<Steinberg::Vst::ParamID>(id)))p->addDependent(&observer);
+        refresh();return true;
+    }
+    bool removed(VSTGUI::CView* parent) override{
+        if(isAttached())for(auto id:ids)if(auto* p=controller->getParameterObject(static_cast<Steinberg::Vst::ParamID>(id)))p->removeDependent(&observer);
+        return CView::removed(parent);
+    }
     void draw(VSTGUI::CDrawContext* c) override {
         using namespace VSTGUI;
         const auto r=getViewSize();
@@ -70,7 +92,6 @@ public:
 private:
     void refresh(){
         Parameters p;
-        constexpr std::array<Param,7> ids{Param::start,Param::mid,Param::end,Param::length,Param::position,Param::curve,Param::width};
         std::array<double,ids.size()> now{};
         for(std::size_t i=0;i<ids.size();++i){
             now[i]=controller->getParamNormalized(static_cast<Steinberg::Vst::ParamID>(ids[i]));
@@ -105,16 +126,70 @@ private:
         invalid();
     }
     Steinberg::Vst::EditController* controller;
+    Observer observer;
     std::array<double,7> previous{};
     std::array<double,4096> starts{},ends{};
     std::size_t count=0;
     double position=.5;
     bool initialized=false;
 };
+
+// Editor-only controls: no VST3 parameter, automation or DSP mutation.
+class HelpButton final:public VSTGUI::CView{
+public:
+    HelpButton(std::function<void(bool)> cb):CView(VSTGUI::CRect(496,20,520,44)),change(std::move(cb)){}
+    void draw(VSTGUI::CDrawContext* c) override{
+        using namespace VSTGUI;
+        auto r=getViewSize();r.inset(2,2);
+        c->setFillColor(enabled?CColor(232,155,64,255):CColor(36,39,42,255));
+        c->setFrameColor(CColor(109,109,109,255));c->setLineWidth(1);c->drawEllipse(r,kDrawFilledAndStroked);
+        c->setFont(kNormalFont);c->setFontColor(enabled?CColor(16,17,19,255):CColor(226,227,228,255));
+        c->drawString("?",r,kCenterText);setDirty(false);
+    }
+    void onMouseDownEvent(VSTGUI::MouseDownEvent& e) override{
+        if(e.buttonState.isLeft()){enabled=!enabled;change(enabled);invalid();e.consumed=true;}
+    }
+private:
+    std::function<void(bool)> change;
+    bool enabled=false;
+};
+class ResizeGrip final:public VSTGUI::CView{
+public:
+    ResizeGrip(std::function<double()> s,std::function<void(double)> cb):
+        CView(VSTGUI::CRect(940,556,960,576)),scale(std::move(s)),resize(std::move(cb)){}
+    void draw(VSTGUI::CDrawContext* c) override{
+        using namespace VSTGUI;auto r=getViewSize();
+        c->setFrameColor(CColor(168,170,172,255));c->setLineWidth(1.2);
+        for(int i:{5,10,15})c->drawLine({r.right-i-2,r.bottom-3},{r.right-3,r.bottom-i-2});
+        setDirty(false);
+    }
+    void onMouseEnterEvent(VSTGUI::MouseEnterEvent&) override{if(getFrame())getFrame()->setCursor(VSTGUI::kCursorNWSESize);}
+    void onMouseExitEvent(VSTGUI::MouseExitEvent&) override{if(getFrame()&&!dragging)getFrame()->setCursor(VSTGUI::kCursorDefault);}
+    void onMouseDownEvent(VSTGUI::MouseDownEvent& e) override{
+        if(!e.buttonState.isLeft())return;
+        dragging=true;initialWidth=960*scale();anchor=e.mousePosition.x*scale();e.consumed=true;
+    }
+    void onMouseMoveEvent(VSTGUI::MouseMoveEvent& e) override{
+        if(!dragging)return;
+        // Events arrive in the scaled logical view coordinates. Convert to
+        // physical width with the current scale to avoid compounded deltas.
+        resize(initialWidth+e.mousePosition.x*scale()-anchor);e.consumed=true;
+    }
+    void onMouseUpEvent(VSTGUI::MouseUpEvent& e) override{
+        if(dragging){dragging=false;if(getFrame())getFrame()->setCursor(VSTGUI::kCursorDefault);e.consumed=true;}
+    }
+    void onMouseCancelEvent(VSTGUI::MouseCancelEvent& e) override{dragging=false;if(getFrame())getFrame()->setCursor(VSTGUI::kCursorDefault);e.consumed=true;}
+private:
+    std::function<double()> scale;
+    std::function<void(double)> resize;
+    double initialWidth=960,anchor=0;
+    bool dragging=false;
+};
+
 class Editor final:public VSTGUI::AspectRatioVST3Editor{
 public:
     explicit Editor(Steinberg::Vst::EditController* c):AspectRatioVST3Editor(c,"view","chopper.uidesc"){
-        setMinZoomFactor(.75);enableTooltips(true);setIdleRate(33);
+        setMinZoomFactor(.75);enableTooltips(false);
     }
     // Linear drag is the primary input, independent of the host preference.
     int32_t getKnobMode() const override{return VSTGUI::kLinearMode;}
@@ -127,6 +202,25 @@ protected:
             knob->setKnobRange(knob->getTag()==103?195.f:150.f);
             knob->setZoomFactor(5.f);
             knob->setWantsFocus(true);
+        }
+        if(auto* control=dynamic_cast<VSTGUI::CControl*>(result)){
+            static constexpr const char* tips[]{
+                "START: initial rhythmic note division.",
+                "MID: note division at the middle point.",
+                "END: final rhythmic note division.",
+                "LENGTH: duration of the pattern in bars.",
+                "MID POSITION: location of the middle division within the pattern.",
+                "CURVE: shape of the rate transition. 0% is linear.",
+                "SHAPE: waveform of each rhythmic impulse.",
+                "WIDTH: open fraction of each impulse. 50% means equal open and closed time.",
+                "ATTACK: fade-in time relative to the impulse period.",
+                "RELEASE: fade-out time relative to the impulse period.",
+                "MIX: dry/wet balance. 0% is dry.",
+                "ACTIVE: starts the pattern on an OFF to ON transition.",
+                "MODE: play once or repeat continuously."
+            };
+            const auto tag=control->getTag();
+            if(tag>=100&&tag<=112)control->setTooltipText(tips[tag-100]);
         }
         return result;
     }
@@ -150,6 +244,10 @@ protected:
         // SDK AspectRatioVST3Editor applies zoom but does not update the
         // CPluginView rectangle. Forward the accepted geometry to the
         // standard VST3Editor path as well; it handles resize reentry.
+        // Recalculate also for hosts that directly call onSize.
+        auto requested=*r;
+        if(checkSizeConstraint(&requested)!=Steinberg::kResultTrue)return Steinberg::kResultFalse;
+        if(requested.getWidth()!=r->getWidth()||requested.getHeight()!=r->getHeight())return Steinberg::kResultFalse;
         const auto result=AspectRatioVST3Editor::onSize(r);
         if(result!=Steinberg::kResultTrue)return result;
         return VSTGUI::VST3Editor::onSize(r);
@@ -162,6 +260,12 @@ protected:
     }
     VSTGUI::CView* createView(const VSTGUI::UIAttributes& attrs,const VSTGUI::IUIDescription* desc) override{
         const auto* name=attrs.getAttributeValue("custom-view-name");
+        if(name&&*name=="HelpButton")return new HelpButton([this](bool enabled){enableTooltips(enabled);});
+        if(name&&*name=="ResizeGrip")return new ResizeGrip([this]{return getZoomFactor()*getContentScaleFactor();},[this](double width){
+            Steinberg::ViewRect r{0,0,static_cast<Steinberg::int32>(std::lround(std::clamp(width,720*getContentScaleFactor(),1440*getContentScaleFactor()))),0};
+            r.bottom=static_cast<Steinberg::int32>(std::floor(r.right*.6));
+            if(checkSizeConstraint(&r)==Steinberg::kResultTrue)requestResize(VSTGUI::CPoint(r.getWidth(),r.getHeight()));
+        });
         if(name&&*name=="PercentReadout")return new PercentLabel();
         if(name&&*name=="ChopperPreview")return new Preview(VSTGUI::CRect(24,72,936,210),getController());
         return AspectRatioVST3Editor::createView(attrs,desc);

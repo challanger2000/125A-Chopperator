@@ -586,6 +586,18 @@ void guiContract(const VST3::Hosting::Module::Ptr& module,const std::filesystem:
         require(view->getSize(&size)==kResultOk&&size.getWidth()==960&&size.getHeight()==576,"restored geometry");
         require(GetClientRect(child,&childRect)!=0&&childRect.right==960&&childRect.bottom==576,"restored child geometry");
         if(cycle==0)previewContract(n,child);
+        // The plugin's own corner grip requests intermediate sizes from the host.
+        SendMessageW(child,WM_MOUSEMOVE,0,MAKELPARAM(950,566));
+        SendMessageW(child,WM_LBUTTONDOWN,MK_LBUTTON,MAKELPARAM(950,566));
+        SendMessageW(child,WM_MOUSEMOVE,MK_LBUTTON,MAKELPARAM(1105,659));pumpGui(80);
+        require(view->getSize(&size)==kResultOk&&size.getWidth()==1115&&size.getHeight()==669,"corner drag intermediate zoom");
+        SendMessageW(child,WM_MOUSEMOVE,MK_LBUTTON,MAKELPARAM(1190,710));pumpGui(80);
+        require(view->getSize(&size)==kResultOk&&size.getWidth()==1200&&size.getHeight()==720,"corner drag second intermediate zoom");
+        SendMessageW(child,WM_LBUTTONUP,0,MAKELPARAM(1190,710));pumpGui(60);
+        require(GetClientRect(child,&childRect)!=0&&childRect.right==1200&&childRect.bottom==720,"corner native zoom geometry");
+        ParamID scaledId=0;require(finder->findParameter(173,393,scaledId)==kResultTrue&&scaledId==100,"scaled knob hit mapping");
+        require(view->checkSizeConstraint(&original)==kResultOk&&frame->resizeView(view.get(),&original)==kResultOk,"corner zoom restore");pumpGui(100);
+        std::cout<<"NATIVE_CORNER_CONTINUOUS_ZOOM_PASS\n";
         // Capture the owner reference fast-slow-fast RECT trajectory,
         // not the unrelated short SINE settings left behind by earlier QA.
         const std::array<double,13> previewDefaults{4./6,1./6,4./6,5./65,.5,.5,0,.5,.02,.05,1,0,0};
