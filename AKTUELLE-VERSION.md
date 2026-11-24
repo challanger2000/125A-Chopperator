@@ -1,3 +1,7 @@
+# Current development state — P009 independent re-audit remediation
+
+**RELEASE NO-GO.** Codex audit `5fb47c34ef2aba974d68703e45e265037627bdb4` confirms the original core corrections but reproduces registry invalidation and gate gaps. This follow-up replaces the GUI-thread callback vector with stable registered snapshot tokens, adds standalone self/later/nested removal and dirty callback tests, keeps the editor receiver alive during sync, invalidates stale open text on successful component recall, harmonizes minimum/maximum DPI pixel rounding with SDK floor, and requires the exact 17-file candidate inventory including moduleinfo plus SDK semantic validation. Product DSP and Glass V2 geometry unchanged. All new corrections NOT RUN until exact tests. Native synchronous detach/frame lifetime, fractional DPI and open-text recall still require explicit native regressions; N05 report identity and N06 temporal RT oracle remain open. Previous Windows results apply only to aade956. No release promotion.
+
 # Current development state — P009 / 0.9.0 verified Windows candidate
 
 **Windows automated gates PASS; independent re-audit pending; release NO-GO.**

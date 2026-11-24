@@ -300,6 +300,7 @@ public:
     }
     tresult PLUGIN_API setComponentState(IBStream* stream) override{
         Parameters p;if(!decode(stream,p))return kResultFalse;
+        ++ui.recallEpoch; // invalidate only edits from a successfully replaced component state
         for(std::size_t i=0;i<parameterCount;++i)EditController::setParamNormalized(
             static_cast<ParamID>(100+i),p.get(static_cast<Param>(100+i)));
         ui.notify();return kResultOk;

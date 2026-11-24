@@ -13,6 +13,7 @@ REQUIRED = {
     "Contents/Resources/Steinberg-VST3-LICENSE.txt",
     "Contents/Resources/VSTGUI-LICENSE.txt",
     "Contents/Resources/chopper.uidesc",
+    "Contents/Resources/moduleinfo.json",
     "Contents/Resources/logo.png",
     "Contents/Resources/logo_3x.png",
     *("Contents/Resources/knob_" + size + "_" + variant + ".png"
@@ -42,10 +43,10 @@ def main():
         BUNDLE+"/PlugIn.ico": sha(template / "VST_Logo_Steinberg.ico"),
         BUNDLE+"/desktop.ini": sha(template / "desktop.ini.in"),
     }
-    unexpected = sorted(f for f in files
-                        if not f.startswith(BUNDLE+"/Contents/") and f not in root_expected)
-    if unexpected:
-        raise ValueError("unexpected bundle layout: " + ", ".join(unexpected))
+    expected = {BUNDLE+"/"+r for r in REQUIRED} | root_expected.keys()
+    if files.keys() != expected:
+        raise ValueError("bundle inventory mismatch: missing=" + repr(sorted(expected-files.keys()))
+                         + "; unexpected=" + repr(sorted(files.keys()-expected)))
     for name, expected_hash in root_expected.items():
         if files.get(name) != expected_hash:
             raise ValueError("missing or altered SDK folder icon metadata: " + name)

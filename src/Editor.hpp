@@ -1,5 +1,6 @@
 #pragma once
 #include "Parameters.hpp"
+#include "EditorPreferences.hpp"
 #include "vstgui/plugin-bindings/vst3editor.h"
 #include "vstgui/lib/cdrawcontext.h"
 #include "vstgui/lib/cgradient.h"
@@ -22,33 +23,12 @@
 #include <array>
 
 namespace chopper {
-struct EditorPreferences {
-    double zoom=1.; bool help=false;
-    // GUI-thread-only registry. An editor can be created, removed or reopened
-    // independently of the processing component. No audio-thread accesses.
-    struct Watch { const void* owner; std::function<void()> update; };
-    std::vector<Watch> watches,uiWatches;
-    std::function<void()> markDirty;
-    void notify(){for(auto& w:watches)w.update();}
-    void notifyUI(){for(auto& w:uiWatches)w.update();}
-    void remove(const void* owner){
-        const auto match=[owner](const auto& w){return w.owner==owner;};
-        std::erase_if(watches,match);std::erase_if(uiWatches,match);
-    }
-    void restore(double z,bool h){zoom=z;help=h;notifyUI();}
-    void changeZoom(double z){
-        if(zoom==z)return;zoom=z;if(markDirty)markDirty();notifyUI();
-    }
-    void changeHelp(bool h){
-        if(help==h)return;help=h;if(markDirty)markDirty();notifyUI();
-    }
-};
 // SDK-native CTextEdit opens its platform field only on double click.
 // Keep the raw user entry intact through the SDK's valueChanged callback;
 // compact formatting applies to canonical controller feedback only.
 class ValueReadout final:public VSTGUI::CTextEdit{
 public:
-    explicit ValueReadout(Steinberg::Vst::EditController* c):CTextEdit(VSTGUI::CRect(0,0,1,1),nullptr,-1,nullptr,nullptr,kDoubleClickStyle),controller(c){
+    explicit ValueReadout(Steinberg::Vst::EditController* c,EditorPreferences& p):CTextEdit(VSTGUI::CRect(0,0,1,1),nullptr,-1,nullptr,nullptr,kDoubleClickStyle),controller(c),prefs(p){
         setImmediateTextChange(false);
     }
     void setText(const VSTGUI::UTF8String& txt) override{
@@ -71,13 +51,18 @@ public:
         if(display.ends_with(".0"))display.resize(display.size()-2);
         CTextEdit::setText(VSTGUI::UTF8String(display+"%"));
     }
+    void takeFocus() override{
+        if(!getPlatformTextEdit())editEpoch=prefs.recallEpoch;
+        CTextEdit::takeFocus();
+    }
     void looseFocus() override{
+        VSTGUI::CBaseObjectGuard keep(this);
         auto field=getPlatformTextEdit();
         if(!field)return;
         double value=0;
         const auto input=field->getText();
         // Invalid input or Escape never emits an edit or changes the sound.
-        if(!parseEntry(static_cast<Param>(getTag()),input.getString(),value))
+        if(editEpoch!=prefs.recallEpoch||!parseEntry(static_cast<Param>(getTag()),input.getString(),value))
             field->setText(getText());
         rawNext=field->getText()!=getText();
         CTextEdit::looseFocus();
@@ -98,6 +83,8 @@ protected:
     }
 private:
     Steinberg::Vst::EditController* controller;
+    EditorPreferences& prefs;
+    std::uint64_t editEpoch=0;
     bool rawNext=false;
 };
 
@@ -484,7 +471,7 @@ protected:
                 return Steinberg::kResultFalse;
             }
         }else{
-            const auto width=static_cast<Steinberg::int32>(std::lround(960*getZoomFactor()*factor));
+            const auto width=static_cast<Steinberg::int32>(std::floor(960*getZoomFactor()*factor));
             rect.right=rect.left+width;
             rect.bottom=rect.top+static_cast<Steinberg::int32>(std::floor(width*.6));
         }
@@ -505,7 +492,7 @@ protected:
         const auto oldZoom=getZoomFactor();
         const auto scale=getContentScaleFactor();
         const auto factor=std::clamp(r->getWidth()/(960.*scale),.75,1.5);
-        if(r->getWidth()<std::lround(720*scale)||r->getWidth()>std::lround(1440*scale)||
+        if(r->getWidth()<std::floor(720*scale)||r->getWidth()>std::floor(1440*scale)||
            std::abs(r->getHeight()-r->getWidth()*.6)>1.01)return Steinberg::kResultFalse;
         if(std::getenv("CHOPPER_GUI_TRACE"))std::fprintf(stderr,"EDITOR_ACCEPT_SIZE %d x %d zoom=%.9f\n",r->getWidth(),r->getHeight(),factor);
         resizing=true;
@@ -519,7 +506,7 @@ protected:
     Steinberg::tresult PLUGIN_API checkSizeConstraint(Steinberg::ViewRect* r) override{
         if(!r)return Steinberg::kInvalidArgument;
         const auto scale=getContentScaleFactor();
-        const auto w=std::clamp(r->getWidth(),static_cast<Steinberg::int32>(std::lround(720*scale)),static_cast<Steinberg::int32>(std::lround(1440*scale)));
+        const auto w=std::clamp(r->getWidth(),static_cast<Steinberg::int32>(std::floor(720*scale)),static_cast<Steinberg::int32>(std::floor(1440*scale)));
         r->right=r->left+w;r->bottom=r->top+static_cast<Steinberg::int32>(std::floor(w*.6));
         return Steinberg::kResultTrue;
     }
@@ -536,12 +523,13 @@ protected:
                 if(std::getenv("CHOPPER_GUI_TRACE"))std::fprintf(stderr,"GRIP_REQUEST %d x %d accepted=%d\n",r.getWidth(),r.getHeight(),int(accepted));
             }
         });
-        if(name&&*name=="ValueReadout")return new ValueReadout(getController());
+        if(name&&*name=="ValueReadout")return new ValueReadout(getController(),preferences);
         if(name&&*name=="ChopperPreview")return new Preview(VSTGUI::CRect(24,72,936,210),getController(),preferences);
         return AspectRatioVST3Editor::createView(attrs,desc);
     }
 private:
     void syncPreferences(){
+        Steinberg::IPtr<Steinberg::IPlugView> keep(this);
         if(!opened)return;
         if(helpButton)helpButton->invalid();
         if(helpOverlay){
