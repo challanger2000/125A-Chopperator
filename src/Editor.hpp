@@ -56,14 +56,24 @@ public:
         c->drawString("START",CPoint(l, r.top+18));
         c->drawString("MID",CPoint(mid-10,r.top+18));
         c->drawString("END",CPoint(rr-22,r.top+18));
-        c->drawString("PREVIEW  120 BPM / 4/4",CRect(l,r.bottom-17,rr,r.bottom-2),kCenterText);
-        c->setFrameColor(CColor(245,156,73,255));c->setLineWidth(1.2);
-        double last=0;
-        for(std::size_t i=0;i<low.size();++i){
-            double x=l+(rr-l)*double(i)/double(low.size()-1);
-            double y1=bottom-(bottom-top)*low[i],y2=bottom-(bottom-top)*high[i];
-            if(i)c->drawLine({l+(rr-l)*double(i-1)/double(low.size()-1),last},{x,y2});
-            c->drawLine({x,y1},{x,y2});last=y1;
+        c->drawString("GATE PREVIEW  120 BPM / 4/4",CRect(l,r.bottom-17,rr,r.bottom-2),kCenterText);
+        // Filled rhythmic impulses, not an isolated trace or a rate curve.
+        // Average per column preserves duty cycle at high pulse density;
+        // min/max marks retain the envelope excursions when compressed.
+        const double dx=(rr-l)/double(mean.size());
+        c->setFillColor(CColor(195,104,38,255));
+        for(std::size_t i=0;i<mean.size();++i){
+            const double x=l+dx*double(i);
+            const double y=bottom-(bottom-top)*mean[i];
+            if(y<bottom)c->drawRect(CRect(x,y,x+dx,bottom),kDrawFilled);
+        }
+        c->setFrameColor(CColor(245,156,73,255));c->setLineWidth(1);
+        for(std::size_t i=0;i<high.size();++i){
+            const double x=l+dx*(double(i)+.5);
+            const double hi=bottom-(bottom-top)*high[i];
+            const double lo=bottom-(bottom-top)*low[i];
+            if(hi<lo)c->drawLine({x,hi},{x,lo});
+            if(high[i]>0)c->drawLine({x-dx*.5,hi},{x+dx*.5,hi});
         }
         setDirty(false);
     }
@@ -82,17 +92,21 @@ private:
         constexpr double sr=2000;
         Core core;core.prepare(sr);core.configure(s);core.setClock(120,4,4);core.setActive(true);
         const auto count=static_cast<int>(s.bars*2*sr);
-        low.fill(1);high.fill(0);
+        low.fill(1);high.fill(0);mean.fill(0);
+        std::array<unsigned,872> counts{};
         for(int i=0;i<count;++i){
             const auto j=std::min(low.size()-1,static_cast<std::size_t>(i)*low.size()/static_cast<std::size_t>(count));
-            const double g=core.tick();low[j]=std::min(low[j],g);high[j]=std::max(high[j],g);
+            const double g=core.tick();low[j]=std::min(low[j],g);high[j]=std::max(high[j],g);mean[j]+=g;++counts[j];
         }
-        for(std::size_t i=0;i<low.size();++i)if(low[i]>high[i])low[i]=high[i]=i?high[i-1]:1;
+        for(std::size_t i=0;i<low.size();++i){
+            if(counts[i])mean[i]/=counts[i];
+            else low[i]=high[i]=mean[i]=i?mean[i-1]:1;
+        }
         invalid();
     }
     Steinberg::Vst::EditController* controller;
     std::array<double,11> previous{};
-    std::array<double,872> low{},high{};
+    std::array<double,872> low{},high{},mean{};
     double position=.5;
     bool initialized=false;
 };

@@ -39,3 +39,4 @@
 - P007 full Windows QA success, exact native screenshot inspected.
 - GUI-only compact percent readouts, preserve full parameter precision.
 - Native Ctrl+left reset oracle for all ten knobs, including host edit notifications.
+- Owner display correction: filled rhythmic impulse preview with shape contour; screenshot at agreed defaults rather than arbitrary QA state.
