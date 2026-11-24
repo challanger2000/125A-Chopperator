@@ -27,6 +27,7 @@
 <control-tag name="P112" tag="112"/>
 </control-tags><gradients><gradient name="Button"><color-stop rgba="#17191bff" start="0"/><color-stop rgba="#111315ff" start="1"/></gradient><gradient name="Selected"><color-stop rgba="#654326ff" start="0"/><color-stop rgba="#3d291aff" start="1"/></gradient></gradients>
 <template name="view" class="CViewContainer" origin="0, 0" size="960, 576" minSize="720, 432" maxSize="1440, 864" background-color="Panel" transparent="false">
+<view class="CView" custom-view-name="GlassFaceplate" origin="0, 0" size="960, 576" mouse-enabled="false"/>
 <view class="CView" origin="24, 10" size="84, 42" bitmap="logo" mouse-enabled="false"/>
 <view class="CTextLabel" origin="120, 10" size="404, 42" title="CHOPPERATOR" font="Title" font-color="Muted" text-alignment="center" transparent="true" mouse-enabled="false"/>
 <view class="CView" custom-view-name="HelpButton" origin="496, 20" size="24, 24" mouse-enabled="true"/>
@@ -34,8 +35,6 @@
 <view class="CSegmentButton" origin="534, 18" size="156, 32" control-tag="P111" segment-names="OFF,ON" selection-mode="Single" style="horizontal" font="Label" text-color="Text" text-color-highlighted="Amber" frame-color="Frame" frame-width="1" round-radius="6" gradient="Button" gradient-highlighted="Selected"/>
 <view class="CSegmentButton" origin="704, 18" size="232, 32" control-tag="P112" segment-names="ONE SHOT,LOOP" selection-mode="Single" style="horizontal" font="Label" text-color="Text" text-color-highlighted="Amber" frame-color="Frame" frame-width="1" round-radius="6" gradient="Button" gradient-highlighted="Selected"/>
 <view class="CView" custom-view-name="ChopperPreview" origin="24, 72" size="912, 138" mouse-enabled="false"/>
-<view class="CViewContainer" origin="24, 224" size="912, 176" background-color="Inset" transparent="false" mouse-enabled="false"/>
-<view class="CViewContainer" origin="24, 414" size="912, 104" background-color="Inset" transparent="false" mouse-enabled="false"/>
 <view class="CTextLabel" origin="53, 229" size="170, 22" title="START" font="Label" font-color="Muted" text-alignment="center" transparent="true" mouse-enabled="false"/>
 <view class="CAnimKnob" origin="74, 250" size="128, 128" bitmap="knobL" control-tag="P100" wheel-inc-value="0.166666666667" transparent="true"/>
 <view class="CTextEdit" custom-view-name="ValueReadout" style-doubleclick="true" immediate-text-change="false" back-color="Inset" origin="53, 376" size="170, 22" title="" font="Value" font-color="Text" text-alignment="center" transparent="true" mouse-enabled="true" control-tag="P100"/>

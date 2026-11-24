@@ -55,3 +55,4 @@
 - P008 verified all thirteen native GUI-to-audio paths and exact fresh state PCM recall; supply unchanged, hash-verified Windows x64 VST3 candidate for owner practical acceptance.
 - Add double-click value entry for all ten knob readouts using SDK-native text edits; strict note/bar/percent parsing and cancellation.
 - Simplify contextual help to a centered muted text line without panel or border.
+- Add restrained glass-like faceplate lighting, recessed panel shading and fine display rim, preserving original controls and pulse geometry.

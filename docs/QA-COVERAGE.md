@@ -61,3 +61,5 @@ Complete workflow PASS; all thirteen actual native GUI-to-processor control path
 Owner double-click entry requirement: SDK CTextEdit fields for all ten knob readouts; native valid entry, invalid input and Escape tests added, including normalized values and edit callbacks. Pending exact CI.
 
 Updated native composed-pixel help test for centered unboxed text: baseline exact when off/leave, two different visible glyph patterns, centered pixel bounds and no solid panel. Pending CI.
+
+45445714729 full workflow PASS, including native double-click numeric entry and centered unboxed help. New vector-only glass faceplate styling behind existing controls; run complete regression and inspect real native capture, not generated concept art. Pending.

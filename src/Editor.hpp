@@ -2,6 +2,8 @@
 #include "Parameters.hpp"
 #include "vstgui/plugin-bindings/vst3editor.h"
 #include "vstgui/lib/cdrawcontext.h"
+#include "vstgui/lib/cgradient.h"
+#include "vstgui/lib/cgraphicspath.h"
 #include "vstgui/lib/cbitmap.h"
 #include "vstgui/lib/cfont.h"
 #include "vstgui/lib/cframe.h"
@@ -82,6 +84,58 @@ private:
     Steinberg::Vst::EditController* controller;
     bool rawNext=false;
 };
+
+// Static, vector-drawn faceplate only. Keep all existing controls, their
+// hit geometry, original branded assets and timing-diagram colors intact.
+// Background layer lies behind every interactive view.
+class GlassFaceplate final:public VSTGUI::CView{
+public:
+    GlassFaceplate():CView(VSTGUI::CRect(0,0,960,576)){setMouseEnabled(false);setTransparency(false);}
+    void draw(VSTGUI::CDrawContext* c) override{
+        using namespace VSTGUI;
+        const auto gradient=[&](const CRect& r,double radius,CColor a,CColor b,CPoint start,CPoint end){
+            auto path=owned(c->createRoundRectGraphicsPath(r,radius));
+            auto colors=owned(CGradient::create(0.,1.,a,b));
+            if(path&&colors)c->fillLinearGradient(path.get(),*colors,start,end);
+        };
+        const auto sheen=[&](const CRect& r,double radius,int peak){
+            auto path=owned(c->createRoundRectGraphicsPath(r,radius));
+            auto colors=owned(CGradient::create(0.,1.,CColor(220,232,245,0),CColor(220,232,245,0)));
+            if(!path||!colors)return;
+            colors->addColorStop(.22,CColor(220,232,245,0));
+            colors->addColorStop(.42,CColor(220,232,245,static_cast<uint8_t>(peak)));
+            colors->addColorStop(.50,CColor(220,232,245,static_cast<uint8_t>(peak/2)));
+            colors->addColorStop(.67,CColor(220,232,245,0));
+            c->fillLinearGradient(path.get(),*colors,{r.left+120,r.top-25},{r.right-140,r.bottom+80});
+        };
+        const auto edge=[&](const CRect& r,double radius,CColor color){
+            auto path=owned(c->createRoundRectGraphicsPath(r,radius));
+            if(path){c->setFrameColor(color);c->setLineWidth(1);c->drawGraphicsPath(path.get(),CDrawContext::kPathStroked);}
+        };
+        // Dark lacquer: top-to-bottom depth, broad low-opacity diagonal
+        // reflection, a restrained bevel instead of bright metallic chrome.
+        c->setFillColor(CColor(16,18,20,255));c->drawRect(CRect(0,0,960,576),kDrawFilled);
+        gradient({1,1,959,575},7,{48,52,56,255},{25,28,31,255},{0,0},{0,576});
+        sheen({1,1,959,575},7,16);
+        edge({1.5,1.5,958.5,574.5},7,{78,83,88,255});
+        c->setFrameColor(CColor(119,124,129,145));c->setLineWidth(1);
+        c->drawLine({12,3},{948,3});
+        c->setFrameColor(CColor(9,10,12,210));c->drawLine({12,573},{948,573});
+        // Recessed control groups: soft rim light above, shaded lower edge.
+        for(const CRect r:{CRect(24,224,936,400),CRect(24,414,936,518)}){
+            gradient(r,5,{35,38,41,255},{24,27,30,255},{r.left,r.top},{r.left,r.bottom});
+            sheen(r,5,17);
+            edge(r,5,{54,58,62,255});
+            c->setFrameColor(CColor(105,111,118,110));c->drawLine({r.left+7,r.top+1},{r.right-7,r.top+1});
+            c->setFrameColor(CColor(12,14,16,180));c->drawLine({r.left+7,r.bottom-1},{r.right-7,r.bottom-1});
+        }
+        // Thin glass-display bezel outside the verified orange-pulse canvas.
+        gradient({21,69,939,213},5,{93,98,103,255},{12,14,17,255},{21,69},{21,213});
+        edge({21.5,69.5,938.5,212.5},5,{77,81,86,255});
+        setDirty(false);
+    }
+};
+
 class Preview final:public VSTGUI::CView {
     static constexpr std::array<Param,7> ids{Param::start,Param::mid,Param::end,Param::length,Param::position,Param::curve,Param::width};
 public:
@@ -374,6 +428,7 @@ protected:
     }
     VSTGUI::CView* createView(const VSTGUI::UIAttributes& attrs,const VSTGUI::IUIDescription* desc) override{
         const auto* name=attrs.getAttributeValue("custom-view-name");
+        if(name&&*name=="GlassFaceplate")return new GlassFaceplate();
         if(name&&*name=="HelpButton")return new HelpButton(preferences.help,[this](bool enabled){
             preferences.help=enabled;if(helpOverlay)helpOverlay->hide();hovered=nullptr;
         });
