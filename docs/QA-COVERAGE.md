@@ -35,3 +35,6 @@ P008 adds all-ten-knob Ctrl+left native reset tests; pending until actual CI. No
 - Programme subjective evaluation using level-matched A/B (including distorted performed powerchord if authorized fixture available). Existing two real isolated guitar note recordings and rendered pad, six independently checked PCM outputs, not human audition.
 - Intended DAW Studio Pro: real project state, all controls, host activation/automation, editor reopen, continuous resize and listening. Only after technical candidate acceptance, no repeated interim requests to owner.
 - Final version/package/install path QA and approval. No public FINAL/Gumroad claim.
+
+## P008 verified delta
+Run 45312830818 success: 56/0/0 independent tester, all-ten-knob Ctrl+left reset twice, native screenshot reviewed against owner timing diagram reference, existing DSP regressions pass. Actual timing preview pixel oracle on all seven relevant left-drag controls now added; pending run. No full audit or DAW acceptance yet.

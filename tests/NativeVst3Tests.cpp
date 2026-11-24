@@ -394,6 +394,102 @@ void wheelGui(HWND child,int x,int y){
     SendMessageW(child,WM_MOUSEWHEEL,MAKEWPARAM(0,WHEEL_DELTA),MAKELPARAM(pt.x,pt.y));
     pumpGui(100);
 }
+
+using PreviewSettings=std::array<double,7>;
+// Independent oracle: closed-form phase integration on a four-quarter bar.
+// No inclusion of the product's Core/Parameters/Preview implementation.
+bool previewExpected(const PreviewSettings& p,double x){
+    const auto division=[](double v){return std::pow(2.,std::round(v*6));};
+    const double a=division(p[0]),b=division(p[1]),c=division(p[2]);
+    const int index=static_cast<int>(std::round(p[3]*65));
+    const double bars=index==0?.25:index==1?.5:index-1.;
+    const double m=.01+.98*p[4],k=std::pow(2.,4*p[5]-2);
+    double integrated=0;
+    if(x<=m){
+        const double u=x/m;
+        integrated=a*x+(b-a)*m*std::pow(u,k+1)/(k+1);
+    }else{
+        const double z=x-m;
+        integrated=m*(a+(b-a)/(k+1))+b*z+(c-b)*(1-m)*std::pow(z/(1-m),k+1)/(k+1);
+    }
+    const double phase=bars*integrated;
+    return phase-std::floor(phase)<p[6];
+}
+std::vector<bool> previewRow(HWND child,int y){
+    constexpr int first=52,last=908;
+    HDC screen=GetDC(child);require(screen!=nullptr,"preview screen DC");
+    HDC dc=CreateCompatibleDC(screen);require(dc!=nullptr,"preview memory DC");
+    BITMAPINFO bi{};bi.bmiHeader.biSize=sizeof(BITMAPINFOHEADER);bi.bmiHeader.biWidth=960;bi.bmiHeader.biHeight=-1;
+    bi.bmiHeader.biPlanes=1;bi.bmiHeader.biBitCount=32;bi.bmiHeader.biCompression=BI_RGB;
+    void* pixels=nullptr;HBITMAP bitmap=CreateDIBSection(dc,&bi,DIB_RGB_COLORS,&pixels,nullptr,0);
+    require(bitmap&&pixels,"preview scanline DIB");
+    auto prev=SelectObject(dc,bitmap);
+    require(BitBlt(dc,0,0,960,1,screen,0,y,SRCCOPY)!=0,"preview scanline capture");GdiFlush();
+    const auto* data=static_cast<const std::uint32_t*>(pixels);
+    std::vector<bool> result;result.reserve(last-first+1);
+    for(int x=first;x<=last;++x){
+        const auto v=data[x];const int r=(v>>16)&255,g=(v>>8)&255,b=v&255;
+        result.push_back(r>170&&g>100&&g<205&&b<100);
+    }
+    SelectObject(dc,prev);DeleteObject(bitmap);DeleteDC(dc);ReleaseDC(child,screen);
+    return result;
+}
+void assertPreview(const std::vector<bool>& actual,const PreviewSettings& p){
+    constexpr double origin=24+912.*10/340,span=912.*320/340;
+    int stable=0,errors=0,open=0,closed=0;
+    for(std::size_t i=0;i<actual.size();++i){
+        const double x=52+double(i)+.5;
+        const bool expected=previewExpected(p,(x-origin)/span);
+        // Ignore the antialiased transition boundary, not the gate interior.
+        if(previewExpected(p,(x-1.5-origin)/span)!=expected||
+           previewExpected(p,(x+1.5-origin)/span)!=expected)continue;
+        ++stable;open+=expected;closed+=!expected;errors+=actual[i]!=expected;
+    }
+    std::cout<<"PREVIEW_ORACLE stable="<<stable<<" errors="<<errors<<" open="<<open<<" closed="<<closed<<"\n";
+    require(stable>500&&errors<=2,"rendered timing diagram matches independent phase oracle");
+}
+void previewContract(Native& n,HWND child){
+    constexpr std::array<ParamID,7> ids{100,101,102,103,104,105,107};
+    constexpr PreviewSettings baseline{4./6,1./6,4./6,5./65,.5,.5,.5};
+    const auto apply=[&](const PreviewSettings& p){
+        for(std::size_t i=0;i<ids.size();++i)
+            require(n.controller->setParamNormalized(ids[i],p[i])==kResultOk,"preview set host parameter");
+        pumpGui(180);
+    };
+    apply(baseline);
+    const auto base=previewRow(child,125);
+    assertPreview(base,baseline);
+    require(previewRow(child,110)==base&&previewRow(child,145)==base,"equal height timing rectangles");
+    // Every knob changes the actual rendered pixels by left-button drag.
+    // Check the mathematically expected new pattern, not merely a repaint.
+    constexpr std::array<std::array<int,3>,7> gestures{{{{138,314,-25}},{{366,314,25}},{{594,314,-25}},
+        {{822,314,3}},{{100,468,30}},{{252,468,30}},{{404,468,-30}}}};
+    constexpr PreviewSettings expected{3./6,2./6,3./6,6./65,.7,.7,.3};
+    for(std::size_t i=0;i<ids.size();++i){
+        apply(baseline);
+        const auto& g=gestures[i];
+        dragGui(child,g[0],g[1],g[2]);pumpGui(180);
+        auto changed=baseline;changed[i]=expected[i];
+        require(std::abs(n.controller->getParamNormalized(ids[i])-changed[i])<1e-6,"preview drag parameter");
+        const auto actual=previewRow(child,125);
+        assertPreview(actual,changed);
+        int delta=0;for(std::size_t x=0;x<base.size();++x)delta+=actual[x]!=base[x];
+        require(delta>12,"preview changed rather than static reference");
+        std::cout<<"NATIVE_PREVIEW_REACTIVE_PASS id="<<ids[i]<<" changed_pixels="<<delta<<"\n";
+    }
+    // SHAPE/ATTACK/RELEASE/MIX do not alter the timing geometry.
+    apply(baseline);
+    for(const auto id:{106u,108u,109u,110u}){
+        require(n.controller->setParamNormalized(id,id==110?0.:1.)==kResultOk,"non timing parameter");
+        pumpGui(120);require(previewRow(child,125)==base,"timing geometry independent of gain shape");
+    }
+    auto edge=baseline;edge[6]=0;apply(edge);const auto empty=previewRow(child,125);
+    require(std::none_of(empty.begin(),empty.end(),[](bool v){return v;}),"width zero empty preview");
+    edge[6]=1;apply(edge);assertPreview(previewRow(child,125),edge);
+    apply(baseline);require(previewRow(child,125)==base,"preview host restore exact");
+    std::cout<<"NATIVE_TIMING_DISPLAY_ALL_7_REACTIVE_PASS\n";
+}
+
 void guiContract(const VST3::Hosting::Module::Ptr& module,const std::filesystem::path& folder){
     Native n(module);auto handler=owned(new GuiHandler);
     require(n.controller->setComponentHandler(handler.get())==kResultOk,"gui handler");
@@ -489,6 +585,7 @@ void guiContract(const VST3::Hosting::Module::Ptr& module,const std::filesystem:
         ViewRect original{0,0,960,576};require(view->checkSizeConstraint(&original)==kResultOk&&frame->resizeView(view.get(),&original)==kResultOk,"resize restore");pumpGui(100);
         require(view->getSize(&size)==kResultOk&&size.getWidth()==960&&size.getHeight()==576,"restored geometry");
         require(GetClientRect(child,&childRect)!=0&&childRect.right==960&&childRect.bottom==576,"restored child geometry");
+        if(cycle==0)previewContract(n,child);
         // Capture the owner reference fast-slow-fast RECT trajectory,
         // not the unrelated short SINE settings left behind by earlier QA.
         const std::array<double,13> previewDefaults{4./6,1./6,4./6,5./65,.5,.5,0,.5,.02,.05,1,0,0};
