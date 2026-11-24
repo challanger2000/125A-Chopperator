@@ -62,3 +62,5 @@
 ## P009 / 0.9.0 development candidate — NOT RELEASED
 - Targeted audit corrections: independent tempo/meter validity, state stream return codes and counts, inactive bus access, representable clock/setup, strict numeric input, live UI preferences and DPI scaling, retained text edit, high-DPI logo and pinned dependency notices.
 - Actual loaded VST3 counterexamples and standalone core rollback tests added; existing evidence and tests preserved. Native UI interactions, exact Windows results and final package acceptance still unverified at commit time.
+
+- P009 exact Windows run 45487606108 SUCCESS, including independent scoped control matrix, resource rejection, exact candidate archive and extracted-module tests. Independent re-audit and owner DAW acceptance pending; no release promotion.

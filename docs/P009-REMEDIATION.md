@@ -47,3 +47,7 @@ Next commit only adds CI and test scripts: independently pinned Lab P65/P67 scop
 
 ## Archive layout regression and exact independent control evidence
 Run 45482729593 at cc9d7cdbe2e880a831eb91223e12fc5d713f43d5 FAILED solely at candidate archive inventory ("unexpected bundle layout"), before archive creation or extracted-module tests. All preceding Windows gates passed, including P74 technical baseline and independent P65/P67 scoped declared control matrix: 13/13 cases, 29/29 actions, REQUIRED_COVERAGE_COMPLETE, 0 failed or skipped cases. Native realtime 0/384 overruns, p99 251.4us, max 450.4us, deadline 2666.67us. SDK build log explicitly shows "[SMTG] Copy PlugIn.ico and desktop.ini and change their attributes." Pinned vst3_cmake 054c9143cbb8d47fc4694e473f2ee3b4d951a8f5, modules/SMTG_AddVST3Library.cmake and modules/SMTG_AddSMTGLibrary.cmake specify exactly these two root files. Archive gate now requires both files to match the pinned SDK template bytes, retains rejection of every other root file, and names rejected entries. Product source unchanged. Next run NOT RUN; no clean installation or release claim. Independent re-audit and Studio Pro still outstanding.
+
+
+## Verified Windows candidate
+See [P009 verification and handoff](P009-VERIFICATION-HANDOFF.md) for the exact successful run and remaining limitations. Historical pending statuses above are not current status. Independent re-audit remains outstanding.

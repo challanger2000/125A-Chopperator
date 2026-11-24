@@ -1,3 +1,9 @@
+# Current development state — P009 / 0.9.0 verified Windows candidate
+
+**Windows automated gates PASS; independent re-audit pending; release NO-GO.**
+
+Exact tested source `aade95612ccf492819221b16ff896d11d138c907`, [Windows run 45487606108](https://github.com/challanger2000/125A-Chopperator/actions/runs/45487606108) SUCCESS. [Current evidence matrix and independent re-audit handoff](docs/P009-VERIFICATION-HANDOFF.md). This documentation-only update does not change the tested source or request a new build. The prior entries below are historical; their NOT RUN/pending statuses are superseded only for the exact gates proven by the latest run.
+
 # Current development state — P009 / 0.9.0 follow-up
 
 ## Archive layout regression and exact independent control evidence
