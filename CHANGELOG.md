@@ -47,3 +47,4 @@
 - Persist per-instance GUI zoom and ? help in separate VST3 controller state, independent of audio presets.
 - Correct live preview refresh via explicit controller notifications, dedicated GUI timer and coalesced invalidation; native pixel diagnostic preserves independent acceptance oracle.
 - Separate fresh native preview and editor gates; add opt-in model/render diagnostics and independent composed-desktop pixel capture to isolate stale display/capture.
+- Verify live preview in actual composed pixels; eliminate recursive host resize request during accepted zoom and log actual grip negotiation.

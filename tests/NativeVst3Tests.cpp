@@ -621,9 +621,13 @@ void guiContract(const VST3::Hosting::Module::Ptr& module,const std::filesystem:
         SendMessageW(child,WM_MOUSEMOVE,0,MAKELPARAM(950,566));
         SendMessageW(child,WM_LBUTTONDOWN,MK_LBUTTON,MAKELPARAM(950,566));
         SendMessageW(child,WM_MOUSEMOVE,MK_LBUTTON,MAKELPARAM(1105,659));pumpGui(80);
-        require(view->getSize(&size)==kResultOk&&size.getWidth()==1115&&size.getHeight()==669,"corner drag intermediate zoom");
+        require(view->getSize(&size)==kResultOk&&GetClientRect(child,&childRect)!=0,"corner first geometry query");
+        std::cout<<"NATIVE_GRIP_FIRST reported="<<size.getWidth()<<"x"<<size.getHeight()<<" child="<<childRect.right<<"x"<<childRect.bottom<<"\n";
+        require(size.getWidth()==1115&&size.getHeight()==669&&childRect.right==1115&&childRect.bottom==669,"corner drag intermediate zoom");
         SendMessageW(child,WM_MOUSEMOVE,MK_LBUTTON,MAKELPARAM(1190,710));pumpGui(80);
-        require(view->getSize(&size)==kResultOk&&size.getWidth()==1200&&size.getHeight()==720,"corner drag second intermediate zoom");
+        require(view->getSize(&size)==kResultOk&&GetClientRect(child,&childRect)!=0,"corner second geometry query");
+        std::cout<<"NATIVE_GRIP_SECOND reported="<<size.getWidth()<<"x"<<size.getHeight()<<" child="<<childRect.right<<"x"<<childRect.bottom<<"\n";
+        require(size.getWidth()==1200&&size.getHeight()==720&&childRect.right==1200&&childRect.bottom==720,"corner drag second intermediate zoom");
         SendMessageW(child,WM_LBUTTONUP,0,MAKELPARAM(1190,710));pumpGui(60);
         require(GetClientRect(child,&childRect)!=0&&childRect.right==1200&&childRect.bottom==720,"corner native zoom geometry");
         ParamID scaledId=0;require(finder->findParameter(173,393,scaledId)==kResultTrue&&scaledId==100,"scaled knob hit mapping");
@@ -666,6 +670,8 @@ void guiContract(const VST3::Hosting::Module::Ptr& module,const std::filesystem:
             pumpGui(80);
             MemoryStream savedUI;require(n.controller->getState(&savedUI)==kResultOk&&savedUI.getSize()==20,"controller UI state save");
             std::vector<char> bytes(savedUI.getData(),savedUI.getData()+savedUI.getSize());
+            double savedZoom=0;std::uint32_t savedHelp=0;std::memcpy(&savedZoom,bytes.data()+8,8);std::memcpy(&savedHelp,bytes.data()+16,4);
+            require(savedZoom==1.25&&savedHelp==1,"saved actual zoom and help switch values");
             Native fresh(module);
             MemoryStream input(bytes.data(),static_cast<TSize>(bytes.size()));
             require(fresh.controller->setState(&input)==kResultOk,"fresh controller UI restore");
@@ -687,7 +693,7 @@ void guiContract(const VST3::Hosting::Module::Ptr& module,const std::filesystem:
     }
     require(n.controller->setComponentHandler(nullptr)==kResultOk,"clear handler");
     UnregisterClassW(wc.lpszClassName,inst);
-    std::cout<<"NATIVE_EDITOR_CONTRACT_PASS two attach cycles, 13 hit mappings, three segment edits, discrete wheel steps, resize roundtrip\n";
+    if(!previewOnly)std::cout<<"NATIVE_EDITOR_CONTRACT_PASS two attach cycles, 13 hit mappings, three segment edits, discrete wheel steps, resize roundtrip\n";
 }
 
 int main(int argc,char** argv){

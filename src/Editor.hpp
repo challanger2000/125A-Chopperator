@@ -183,7 +183,7 @@ private:
 class ResizeGrip final:public VSTGUI::CView{
 public:
     ResizeGrip(std::function<double()> s,std::function<void(double)> cb):
-        CView(VSTGUI::CRect(940,556,960,576)),scale(std::move(s)),resize(std::move(cb)){}
+        CView(VSTGUI::CRect(940,556,960,576)),scale(std::move(s)),resize(std::move(cb)){setMouseableArea(getViewSize());setMouseEnabled(true);}
     void draw(VSTGUI::CDrawContext* c) override{
         using namespace VSTGUI;auto r=getViewSize();
         c->setFrameColor(CColor(168,170,172,255));c->setLineWidth(1.2);
@@ -195,12 +195,15 @@ public:
     void onMouseDownEvent(VSTGUI::MouseDownEvent& e) override{
         if(!e.buttonState.isLeft())return;
         dragging=true;initialWidth=960*scale();anchor=e.mousePosition.x*scale();e.consumed=true;
+        if(std::getenv("CHOPPER_GUI_TRACE"))std::fprintf(stderr,"GRIP_DOWN x=%.8f scale=%.8f width=%.8f anchor=%.8f\n",e.mousePosition.x,scale(),initialWidth,anchor);
     }
     void onMouseMoveEvent(VSTGUI::MouseMoveEvent& e) override{
         if(!dragging)return;
         // Events arrive in the scaled logical view coordinates. Convert to
         // physical width with the current scale to avoid compounded deltas.
-        resize(initialWidth+e.mousePosition.x*scale()-anchor);e.consumed=true;
+        const double width=initialWidth+e.mousePosition.x*scale()-anchor;
+        if(std::getenv("CHOPPER_GUI_TRACE"))std::fprintf(stderr,"GRIP_MOVE x=%.8f scale=%.8f width=%.8f\n",e.mousePosition.x,scale(),width);
+        resize(width);e.consumed=true;
     }
     void onMouseUpEvent(VSTGUI::MouseUpEvent& e) override{
         if(dragging){dragging=false;if(getFrame())getFrame()->setCursor(VSTGUI::kCursorDefault);e.consumed=true;}
@@ -271,6 +274,12 @@ protected:
         opened=ok;return ok;
     }
     void PLUGIN_API close() override{opened=false;AspectRatioVST3Editor::close();}
+    bool beforeSizeChange(const VSTGUI::CRect& newSize,const VSTGUI::CRect& oldSize) override{
+        // The host already accepted this size via onSize. Do not ask it
+        // again while applying its acknowledgement to the native frame.
+        if(resizing)return true;
+        return VSTGUI::VST3Editor::beforeSizeChange(newSize,oldSize);
+    }
     Steinberg::tresult PLUGIN_API onSize(Steinberg::ViewRect* r) override{
         if(!r)return Steinberg::kInvalidArgument;
         // On initial attachment and reentrant host acknowledgement, use
@@ -279,6 +288,7 @@ protected:
         const auto oldZoom=getZoomFactor();
         const auto factor=std::clamp(r->getWidth()/(960.*getContentScaleFactor()),.75,1.5);
         if(std::abs(r->getHeight()-r->getWidth()*.6)>1.01)return Steinberg::kResultFalse;
+        if(std::getenv("CHOPPER_GUI_TRACE"))std::fprintf(stderr,"EDITOR_ACCEPT_SIZE %d x %d zoom=%.9f\n",r->getWidth(),r->getHeight(),factor);
         resizing=true;
         setZoomFactor(factor);
         const auto result=VSTGUI::VST3Editor::onSize(r);
@@ -299,7 +309,10 @@ protected:
         if(name&&*name=="ResizeGrip")return new ResizeGrip([this]{return getZoomFactor()*getContentScaleFactor();},[this](double width){
             Steinberg::ViewRect r{0,0,static_cast<Steinberg::int32>(std::lround(std::clamp(width,720*getContentScaleFactor(),1440*getContentScaleFactor()))),0};
             r.bottom=static_cast<Steinberg::int32>(std::floor(r.right*.6));
-            if(checkSizeConstraint(&r)==Steinberg::kResultTrue)requestResize(VSTGUI::CPoint(r.getWidth(),r.getHeight()));
+            if(checkSizeConstraint(&r)==Steinberg::kResultTrue){
+                const bool accepted=requestResize(VSTGUI::CPoint(r.getWidth(),r.getHeight()));
+                if(std::getenv("CHOPPER_GUI_TRACE"))std::fprintf(stderr,"GRIP_REQUEST %d x %d accepted=%d\n",r.getWidth(),r.getHeight(),int(accepted));
+            }
         });
         if(name&&*name=="PercentReadout")return new PercentLabel();
         if(name&&*name=="ChopperPreview")return new Preview(VSTGUI::CRect(24,72,936,210),getController(),preferences);
