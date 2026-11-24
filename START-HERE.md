@@ -1,0 +1,2 @@
+# 125A Chopperator — entry
+Read central 125A Engineering START-HERE and all mandatory/task-relevant standards in full before working. Then read AKTUELLE-VERSION.md, docs/PRODUCT-CONTRACT.md and CHANGELOG.md. New unreleased project: main is the agreed sole development branch, not an approved stable release. No unnecessary branches or private assets in public CI. Windows x64 VST3 shipping only. DSP before final GUI. Unexecuted gates are NOT RUN.
