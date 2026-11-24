@@ -33,7 +33,11 @@ jobs:
           if ($native.Count -ne 1) { throw "Expected one native host test" }
           & $native[0].FullName $plugin.Path
           if ($LASTEXITCODE -ne 0) { throw "Native VST3 functional tests failed" }
+          $negative = & $native[0].FullName $plugin.Path --negative-spectrum 2>&1
+          $negativeExit = $LASTEXITCODE
+          $negative | Write-Host
+          if ($negativeExit -ne 1 -or ($negative -join ' ') -notmatch 'FAIL SINE carrier oracle') { throw "Spectral negative control did not detect wrong expected carrier" }
       - uses: actions/upload-artifact@v4
         with:
-          name: 125A-Chopperator-P004-Windows-x64-development
+          name: 125A-Chopperator-P005-Windows-x64-development
           path: artifact

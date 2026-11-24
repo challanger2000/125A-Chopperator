@@ -16,3 +16,7 @@
 ## P004 / 0.4.0
 - Real packaged-VST3 native timing/automation/recall test harness (Windows CI gate).
 - Reset reused automation lane on initialization; preserve established DSP and parameter IDs.
+
+## P005 / 0.5.0
+- Add actual-module coherent AM spectrum, folded rectangular sideband, all five shapes, and paced native dense automation measurements.
+- No DSP algorithm change. Verify spectral oracle with a deliberately wrong expected carrier.

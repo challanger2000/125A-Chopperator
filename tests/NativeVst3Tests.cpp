@@ -10,6 +10,9 @@
 #include "pluginterfaces/vst/vstspeaker.h"
 #include "pluginterfaces/base/ustring.h"
 #include <algorithm>
+#include <array>
+#include <chrono>
+#include <thread>
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
@@ -128,12 +131,148 @@ std::vector<float> trajectory(Native& n){
     for(int i=0;i<25024;){const int count=std::min(73+i%311,25024-i);auto a=n.render<float>(count,nullptr,i%3!=0);pcm.insert(pcm.end(),a.begin(),a.end());i+=count;}
     return pcm;
 }
+
+constexpr double pi=3.1415926535897932384626433832795;
+struct SignalBlock {
+    std::array<double,512> l{},r{},ol{},orr{};
+    double* in[2]{l.data(),r.data()},*out[2]{ol.data(),orr.data()};
+    AudioBusBuffers i,o;
+    ProcessData data;
+    SignalBlock(Native& n,int32 count){
+        i.numChannels=o.numChannels=2;i.channelBuffers64=in;o.channelBuffers64=out;
+        data.numInputs=data.numOutputs=1;data.inputs=&i;data.outputs=&o;
+        data.numSamples=count;data.symbolicSampleSize=kSample64;data.processContext=&n.clock;
+    }
+    void process(Native& n){require(n.processor->process(data)==kResultOk,"quality native process");}
+};
+void setConstant(Native& n,int divisionIndex,int shapeIndex,double width,double attack,double release){
+    ParameterChanges p(14);
+    for(auto id:{100u,101u,102u})point(p,id,0,double(divisionIndex)/6);
+    point(p,103,0,65./65);point(p,106,0,double(shapeIndex)/4);
+    point(p,107,0,width);point(p,108,0,attack);point(p,109,0,release);
+    point(p,110,0,1);point(p,111,0,1);point(p,112,0,1);
+    n.flush(p,kSample64);
+}
+std::vector<double> tone(Native& n,double hz,int seconds=1){
+    const int sr=static_cast<int>(n.rate),frames=sr*seconds;
+    std::vector<double> result;result.reserve(frames);
+    SignalBlock b(n,256);
+    // Warm one second to exclude activation transient. All selected tones and
+    // modulation frequencies are integer-Hz, so the window is coherent.
+    for(int i=-sr;i<frames;){
+        const int count=std::min(256,frames-i);b.data.numSamples=count;
+        for(int k=0;k<count;++k){
+            b.l[k]=.5*std::sin(2*pi*hz*double(i+k)/sr);
+            b.r[k]=-.5*b.l[k];
+        }
+        b.process(n);
+        for(int k=0;k<count;++k){
+            require(std::isfinite(b.ol[k])&&std::abs(b.ol[k])<=std::abs(b.l[k])+1e-14,"no audio boost");
+            require(b.orr[k]==-.5*b.ol[k],"tone stereo gain");
+            if(i+k>=0)result.push_back(b.ol[k]);
+        }
+        i+=count;
+    }
+    require(result.size()==static_cast<std::size_t>(frames),"coherent capture");
+    return result;
+}
+double amplitude(const std::vector<double>& x,double hz,double sr){
+    double re=0,im=0;
+    for(std::size_t k=0;k<x.size();++k){
+        const double a=2*pi*hz*double(k)/sr;
+        re+=x[k]*std::cos(a);im+=x[k]*std::sin(a);
+    }
+    return 2*std::hypot(re,im)/double(x.size());
+}
+void spectral(const VST3::Hosting::Module::Ptr& module,bool negative){
+    Native n(module);n.start(48000,kSample64,2);
+    // Sinusoidal AM: .5 input amplitude, g=.5-.5*cos(2*pi*8*t).
+    // Analytic carrier .25, two sidebands .125, no other tones.
+    setConstant(n,4,4,1,0,0);
+    const auto x=tone(n,1000);
+    const double c=amplitude(x,1000,48000),lo=amplitude(x,992,48000),hi=amplitude(x,1008,48000);
+    double error=0;
+    for(std::size_t i=0;i<x.size();++i){
+        const double t=double(i)/48000;
+        const double expected=.5*std::sin(2*pi*1000*t)*(.5-.5*std::cos(2*pi*8*t));
+        error+=(x[i]-expected)*(x[i]-expected);
+    }
+    error=std::sqrt(error/double(x.size()));
+    require(std::abs(c-(negative?.5:.25))<1e-6,"SINE carrier oracle");
+    require(std::abs(lo-.125)<1e-6&&std::abs(hi-.125)<1e-6&&error<1e-6,"SINE sideband and residual oracle");
+    std::cout<<"SINE_AM carrier="<<c<<" lower="<<lo<<" upper="<<hi<<" residual_rms="<<error<<"\n";
+    n.stop();
+    Native q(module);q.start(48000,kSample64,2);q.clock.tempo=240;
+    setConstant(q,6,0,.5,0,0);
+    const auto y=tone(q,23000);
+    // Upper 17th 64-Hz sideband would be 24088 Hz, folds to 23912 Hz.
+    // Reference for an ideal hard 50% duty pulse: coefficient 1/(17*pi).
+    // For a 0.5 ms linear slew (32/1000 of period), multiply by sinc.
+    const double hard=1/(17*pi);
+    const double z=pi*17*.0005*64;
+    const double expected=hard*std::abs(std::sin(z)/z);
+    const double actual=amplitude(y,23912,48000)/.5;
+    require(actual<hard&&std::abs(actual-expected)<.002,"RECT folded sideband vs trapezoid oracle");
+    std::cout<<"RECT_64HZ_FOLDED_SIDEBAND frequency=23912 relative_dBc="<<20*std::log10(actual)
+             <<" hard_dBc="<<20*std::log10(hard)<<" continuous_reference_dBc="<<20*std::log10(expected)<<"\n";
+    // This is one isolated fold, not a full alias-power or audibility metric.
+}
+void waveformContracts(const VST3::Hosting::Module::Ptr& module){
+    for(int shape=0;shape<5;++shape){
+        Native n(module);n.start(48000,kSample64,2);
+        setConstant(n,2,shape,1,0,0); // quarter notes, 2 Hz, width full
+        std::vector<double> x;
+        for(int i=0;i<48000;){int count=std::min(512,48000-i);auto a=n.render<double>(count);x.insert(x.end(),a.begin(),a.end());i+=count;}
+        for(int k=24000+100;k<48000-100;++k){
+            const double u=double(k-24000)/24000;
+            double expected=0;
+            switch(shape){case 0:expected=1;break;case 1:expected=u;break;case 2:expected=1-u;break;
+                case 3:expected=1-std::abs(2*u-1);break;case 4:expected=.5-.5*std::cos(2*pi*u);break;}
+            require(std::abs(x[k]-expected)<1e-7,"native waveform oracle");
+        }
+    }
+    std::cout<<"NATIVE_ALL_FIVE_SHAPES_PASS\n";
+}
+void realtimeProbe(const VST3::Hosting::Module::Ptr& module){
+    using Clock=std::chrono::steady_clock;
+    Native n(module);n.start(48000,kSample64,2);
+    setConstant(n,6,4,.5,0,0);
+    SignalBlock b(n,128);
+    for(int i=0;i<128;++i){b.l[i]=.25*std::sin(2*pi*440*i/48000);b.r[i]=-.5*b.l[i];}
+    ParameterChanges p(14);
+    point(p,100,0,0);point(p,101,0,1);point(p,102,0,0);
+    point(p,104,0,.01);point(p,105,0,1);n.flush(p,kSample64);
+    std::array<double,384> micros{};
+    const auto interval=std::chrono::duration_cast<Clock::duration>(std::chrono::duration<double>(128./48000));
+    auto deadline=Clock::now();double sum=0;int over=0;
+    for(std::size_t i=0;i<micros.size();++i){
+        // Automation setup is host work, intentionally outside callback measurement.
+        p.clearQueue();point(p,104,127,i%2?.01:.99);point(p,105,127,i%2?0.:1.);
+        point(p,107,127,i%2?.2:.9);b.data.inputParameterChanges=&p;
+        const auto begin=Clock::now();
+        const auto status=n.processor->process(b.data);
+        const auto end=Clock::now();
+        require(status==kResultOk,"paced native automation");
+        const double us=std::chrono::duration<double,std::micro>(end-begin).count();
+        micros[i]=us;sum+=us;over+=us>128./48000*1e6;
+        for(int k=0;k<128;++k)require(std::isfinite(b.ol[k])&&std::abs(b.ol[k])<=std::abs(b.l[k])+1e-14,"paced bounded output");
+        deadline+=interval;std::this_thread::sleep_until(deadline);
+    }
+    std::sort(micros.begin(),micros.end());
+    std::cout<<"PACED_NATIVE_MEASUREMENT callbacks="<<micros.size()<<" mean_us="<<sum/micros.size()
+        <<" p95_us="<<micros[364]<<" p99_us="<<micros[380]<<" max_us="<<micros.back()
+        <<" deadline_us="<<128./48000*1e6<<" callback_overruns="<<over<<"\n";
+    // Cloud scheduler and physical ASIO are different. Observation only.
+}
+
 int main(int argc,char** argv){
-    require(argc==2,"bundle argument");
+    require(argc==2||argc==3,"bundle argument");
     std::string error;auto module=VST3::Hosting::Module::create(argv[1],error);
     if(!module){std::cerr<<error<<'\n';return 1;}
     HostApplication host;PluginContextFactory::instance().setPluginContext(&host);
     module->getFactory().setHostContext(&host);
+    if(argc==3){require(std::string(argv[2])=="--negative-spectrum","negative control argument");spectral(module,true);return 2;}
+    waveformContracts(module);spectral(module,false);realtimeProbe(module);
     timing<float>(module,48000,2);timing<double>(module,48000,1);
     timing<float>(module,96000,1);timing<double>(module,192000,2);
     std::cout<<"NATIVE_ACTIVE_MIX_BYPASS_4X_PASS\n";
