@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.25)
-project(Chopperator VERSION 0.6.0 LANGUAGES CXX)
+project(Chopperator VERSION 0.7.0 LANGUAGES CXX)
 include(CTest)
 find_package(Threads REQUIRED)
 add_executable(chopper_core_tests tests/CoreTests.cpp)
@@ -28,7 +28,7 @@ if(CHOPPER_BUILD_VST3)
   endif()
   set(SMTG_ENABLE_VST3_PLUGIN_EXAMPLES OFF CACHE BOOL "" FORCE)
   set(SMTG_ENABLE_VST3_HOSTING_EXAMPLES ON CACHE BOOL "" FORCE)
-  set(SMTG_ENABLE_VSTGUI_SUPPORT OFF CACHE BOOL "" FORCE)
+  set(SMTG_ENABLE_VSTGUI_SUPPORT ON CACHE BOOL "" FORCE)
   set(SMTG_RUN_VST_VALIDATOR OFF CACHE BOOL "" FORCE)
   set(SMTG_CREATE_PLUGIN_LINK OFF CACHE BOOL "" FORCE)
   include(FetchContent)
@@ -39,7 +39,13 @@ if(CHOPPER_BUILD_VST3)
   FetchContent_MakeAvailable(vst3sdk)
   smtg_add_vst3plugin(Chopperator PACKAGE_NAME "125A Chopperator" SOURCES_LIST src/Vst3.cpp)
   target_compile_features(Chopperator PRIVATE cxx_std_20)
-  target_link_libraries(Chopperator PRIVATE sdk)
+  target_link_libraries(Chopperator PRIVATE sdk vstgui_support)
+  set(CHOPPER_GUI_DIR "${CMAKE_CURRENT_SOURCE_DIR}/gui-draft" CACHE PATH "Prepared verified GUI resources")
+  smtg_target_add_plugin_resources(Chopperator RESOURCES
+    resources/chopper.uidesc
+    ${CHOPPER_GUI_DIR}/logo.png ${CHOPPER_GUI_DIR}/logo_3x.png
+    ${CHOPPER_GUI_DIR}/knob_L_100.png ${CHOPPER_GUI_DIR}/knob_L_150.png ${CHOPPER_GUI_DIR}/knob_L_200.png ${CHOPPER_GUI_DIR}/knob_L_300.png
+    ${CHOPPER_GUI_DIR}/knob_S_100.png ${CHOPPER_GUI_DIR}/knob_S_150.png ${CHOPPER_GUI_DIR}/knob_S_200.png ${CHOPPER_GUI_DIR}/knob_S_300.png)
   target_sources(Chopperator PRIVATE ${vst3sdk_SOURCE_DIR}/public.sdk/source/main/dllmain.cpp)
   smtg_target_configure_version_file(Chopperator)
   add_executable(chopper_native_tests tests/NativeVst3Tests.cpp

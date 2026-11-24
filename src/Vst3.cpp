@@ -1,4 +1,6 @@
 #include "HostEngine.hpp"
+#include "Editor.hpp"
+#include <cstring>
 #include "public.sdk/source/vst/vstaudioeffect.h"
 #include "public.sdk/source/vst/vsteditcontroller.h"
 #include "public.sdk/source/main/pluginfactory.h"
@@ -187,6 +189,9 @@ public:
 class Controller final:public EditController{
 public:
     static FUnknown* createInstance(void*){return static_cast<IEditController*>(new Controller);}
+    IPlugView* PLUGIN_API createView(FIDString name) override{
+        return name&&std::strcmp(name,ViewType::kEditor)==0?new Editor(this):nullptr;
+    }
     tresult PLUGIN_API initialize(FUnknown* context) override{
         auto r=EditController::initialize(context);if(r!=kResultOk)return r;
         const TChar* names[]={STR16("START"),STR16("MID"),STR16("END"),STR16("LENGTH"),
@@ -228,8 +233,8 @@ public:
 BEGIN_FACTORY("125A Systems","","",Steinberg::PFactoryInfo::kNoFlags)
 DEF_CLASS2(INLINE_UID_FROM_FUID(chopper::processorUID),Steinberg::PClassInfo::kManyInstances,
     kVstAudioEffectClass,"125A Chopperator",Steinberg::Vst::kDistributable,"Fx|Modulation",
-    "0.6.0",kVstVersionString,chopper::Processor::createInstance)
+    "0.7.0",kVstVersionString,chopper::Processor::createInstance)
 DEF_CLASS2(INLINE_UID_FROM_FUID(chopper::controllerUID),Steinberg::PClassInfo::kManyInstances,
     kVstComponentControllerClass,"125A Chopperator Controller",0,"",
-    "0.6.0",kVstVersionString,chopper::Controller::createInstance)
+    "0.7.0",kVstVersionString,chopper::Controller::createInstance)
 END_FACTORY

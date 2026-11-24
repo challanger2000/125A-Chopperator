@@ -66,7 +66,7 @@ def main():
         frame=math.floor(normalized*127+.5)
         # Crop exact original pixels with no resize or redraw.
         command=["ffmpeg","-v","error","-nostdin","-i",str(source[(family,100)]),
-                 "-vf",f"crop={size}:{size}:0:{frame*size}:exact=1","-frames:v","1","-f","image2pipe","-vcodec","png","-"]
+                 "-vf",f"crop={size//2}:{size//2}:{size//4}:{frame*size+size//4}:exact=1","-frames:v","1","-f","image2pipe","-vcodec","png","-"]
         raw=subprocess.check_output(command)
         svg.append(f'<image x="{cx-size//2}" y="{y}" width="{size}" height="{size}" href="{image_data(raw)}"/>')
         text(cx,y-5,label,13,"#bfc1c4","bold")

@@ -26,3 +26,7 @@
 - P005 exact Windows repeat succeeded including spectral negative control.
 - Native PCM checks using pinned real distorted guitar recordings and rendered pad; evidence WAVs separate from plugin.
 - Independent official released 125A Plugin Tester v0.2.10 pinned executable and report gate. No DSP changes.
+
+## P007 / 0.7.0
+- P006 complete Windows QA success and static design visual review.
+- Native VSTGUI editor with existing parameter bindings, official logo and all four original knob resolutions. Remove transparent frame padding and tile without altering retained pixels. Core-derived preview at reference tempo/meter, no fake playback indicator. No DSP change.

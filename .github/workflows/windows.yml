@@ -9,6 +9,23 @@ jobs:
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
+      - name: Provision pinned FFmpeg fixture tool
+        id: ffmpeg
+        shell: pwsh
+        run: |
+          python -m pip install --only-binary=:all: --disable-pip-version-check imageio-ffmpeg==0.6.0 pillow==11.3.0
+          if ($LASTEXITCODE -ne 0) { throw "Pinned FFmpeg wheel installation failed" }
+          $source = python -c "import imageio_ffmpeg; print(imageio_ffmpeg.get_ffmpeg_exe())"
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path $source -PathType Leaf)) { throw "FFmpeg executable unavailable" }
+          New-Item -ItemType Directory -Force -Path fixture-tools | Out-Null
+          Copy-Item $source fixture-tools/ffmpeg.exe
+          Get-FileHash fixture-tools/ffmpeg.exe -Algorithm SHA256 | Format-List
+          (Resolve-Path fixture-tools).Path | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+      - name: Prepare original GUI resources
+        shell: pwsh
+        run: |
+          python tools/prepare_native_gui.py gui-draft
+          if ($LASTEXITCODE -ne 0) { throw "GUI resource preparation failed" }
       - name: Configure
         run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DCHOPPER_BUILD_VST3=ON
       - name: Compile
@@ -41,18 +58,6 @@ jobs:
           # GitHub pwsh appends an exit using LASTEXITCODE; the intentional failure
           # above is consumed only after its exit code and diagnostic are verified.
           exit 0
-      - name: Provision pinned FFmpeg fixture tool
-        id: ffmpeg
-        shell: pwsh
-        run: |
-          python -m pip install --only-binary=:all: --disable-pip-version-check imageio-ffmpeg==0.6.0
-          if ($LASTEXITCODE -ne 0) { throw "Pinned FFmpeg wheel installation failed" }
-          $source = python -c "import imageio_ffmpeg; print(imageio_ffmpeg.get_ffmpeg_exe())"
-          if ($LASTEXITCODE -ne 0 -or -not (Test-Path $source -PathType Leaf)) { throw "FFmpeg executable unavailable" }
-          New-Item -ItemType Directory -Force -Path fixture-tools | Out-Null
-          Copy-Item $source fixture-tools/ffmpeg.exe
-          Get-FileHash fixture-tools/ffmpeg.exe -Algorithm SHA256 | Format-List
-          (Resolve-Path fixture-tools).Path | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
       - name: Programme fixture acquisition and native PCM checks
         shell: pwsh
         run: |
@@ -93,17 +98,15 @@ jobs:
         if: always() && steps.ffmpeg.outcome == 'success'
         shell: pwsh
         run: |
-          python tools/prepare_gui_design.py gui-draft
-          if ($LASTEXITCODE -ne 0) { throw "Static design asset verification failed" }
           New-Item -ItemType Directory -Force -Path evidence | Out-Null
           Copy-Item gui-draft/Chopperator-static-draft.svg evidence
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: 125A-Chopperator-P006-QA-evidence
+          name: 125A-Chopperator-P007-QA-evidence
           path: evidence
           if-no-files-found: warn
       - uses: actions/upload-artifact@v4
         with:
-          name: 125A-Chopperator-P006-Windows-x64-development
+          name: 125A-Chopperator-P007-Windows-x64-development
           path: artifact
