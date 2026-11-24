@@ -980,10 +980,10 @@ void liveUIAudit(const VST3::Hosting::Module::Ptr& module){
             vr.getHeight()==h&&cr.right==w&&cr.bottom==h,"live UI actual geometry");
     };
     const auto load=[&](double zoom,std::uint32_t help,bool expected=true){
-        MemoryStream state;std::uint32_t tag=0x31554943u,version=1;int32 count=0;
+        MemoryStream state;std::uint32_t tag=0x31554943u,version=1;int32 count=0;int64 position=-1;
         require(state.write(&tag,4,&count)==kResultOk&&state.write(&version,4,&count)==kResultOk&&
             state.write(&zoom,8,&count)==kResultOk&&state.write(&help,4,&count)==kResultOk&&
-            state.seek(0,IBStream::kIBSeekSet)==kResultOk,"live UI fixture");
+            state.seek(0,IBStream::kIBSeekSet,&position)==kResultOk&&position==0,"live UI fixture");
         require((n.controller->setState(&state)==kResultOk)==expected,"live UI recall status");pumpGui(100);
     };
     const auto saved=[&](double zoom,std::uint32_t help){

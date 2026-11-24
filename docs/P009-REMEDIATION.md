@@ -25,3 +25,6 @@ Exact initial P009 eace8def76c167046ed13c6cf4b4a2720a91d7da [Windows run 4546822
 
 Follow-up adds exact native two-view live recall, host DPI denial/recovery, dirty callback counts and automation while a native text field is open. DPI rejection rolls back contentScaleFactor, preattach DPI updates declared dimensions. New tests NOT RUN until exact CI. No release promotion. Glass V2 artwork and audio path unchanged from initial P009. Full Test Lab, independent re-audit and owner Studio Pro remain outstanding.
 
+
+
+Follow-up run 45470099197 FAILED at native test compilation (MSVC C2660, MemoryStream::seek requires an explicit third argument in pinned SDK). No follow-up functional tests executed. Correct the test fixture to verify the returned cursor position as well as the result code. Product implementation unchanged by this correction. Initial P009 verified evidence remains valid only for its original commit. New run pending.

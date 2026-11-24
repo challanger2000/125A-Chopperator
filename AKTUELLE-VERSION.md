@@ -1,5 +1,9 @@
 # Current development state — P009 / 0.9.0 follow-up
 
+
+Follow-up run 45470099197 FAILED at native test compilation (MSVC C2660, MemoryStream::seek requires an explicit third argument in pinned SDK). No follow-up functional tests executed. Correct the test fixture to verify the returned cursor position as well as the result code. Product implementation unchanged by this correction. Initial P009 verified evidence remains valid only for its original commit. New run pending.
+
+
 Exact initial P009 eace8def76c167046ed13c6cf4b4a2720a91d7da [Windows run 45468223314](https://github.com/challanger2000/125A-Chopperator/actions/runs/45468223314) SUCCESS: 4/4 CTests, 47/47 Validator, released 125A Tester 57/0/0 with 100 fresh-process profiles; actual Clock/Stream/Bus/Rate regression PASS, native all 13 audio chains, all 10 text readouts/defaults, all seven live preview controls, existing fresh recall/zoom/help and programme PCM PASS. Paced native 384 callbacks p99 173.1us/max 656.3us vs 2666.67us deadline, 0 overruns; tester logs 10 host scheduling misses per format, not callback deadline misses. Artifact 14957270604 server SHA256 19064715cff022fd2598a489e140b5420983bea36f4e7644a8b85bb711e0b606; evidence 14955354581 SHA256 ff07b8e84ed119c7af352ec43ceaad815e1f1c9a310027db1d1473698f1b2769. Server digests only; ZIP bytes not independently checked.
 
 Follow-up adds exact native two-view live recall, host DPI denial/recovery, dirty callback counts and automation while a native text field is open. DPI rejection rolls back contentScaleFactor, preattach DPI updates declared dimensions. New tests NOT RUN until exact CI. No release promotion. Glass V2 artwork and audio path unchanged from initial P009. Full Test Lab, independent re-audit and owner Studio Pro remain outstanding.
