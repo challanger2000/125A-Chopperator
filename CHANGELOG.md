@@ -48,3 +48,4 @@
 - Correct live preview refresh via explicit controller notifications, dedicated GUI timer and coalesced invalidation; native pixel diagnostic preserves independent acceptance oracle.
 - Separate fresh native preview and editor gates; add opt-in model/render diagnostics and independent composed-desktop pixel capture to isolate stale display/capture.
 - Verify live preview in actual composed pixels; eliminate recursive host resize request during accepted zoom and log actual grip negotiation.
+- Fix native corner QA to use real desktop mouse movement and button state; validate uninterrupted resize at multiple intermediate sizes.

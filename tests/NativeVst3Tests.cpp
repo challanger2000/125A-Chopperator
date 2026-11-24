@@ -617,19 +617,44 @@ void guiContract(const VST3::Hosting::Module::Ptr& module,const std::filesystem:
         ViewRect original{0,0,960,576};require(view->checkSizeConstraint(&original)==kResultOk&&frame->resizeView(view.get(),&original)==kResultOk,"resize restore");pumpGui(100);
         require(view->getSize(&size)==kResultOk&&size.getWidth()==960&&size.getHeight()==576,"restored geometry");
         require(GetClientRect(child,&childRect)!=0&&childRect.right==960&&childRect.bottom==576,"restored child geometry");
-        // The plugin's own corner grip requests intermediate sizes from the host.
-        SendMessageW(child,WM_MOUSEMOVE,0,MAKELPARAM(950,566));
-        SendMessageW(child,WM_LBUTTONDOWN,MK_LBUTTON,MAKELPARAM(950,566));
-        SendMessageW(child,WM_MOUSEMOVE,MK_LBUTTON,MAKELPARAM(1105,659));pumpGui(80);
-        require(view->getSize(&size)==kResultOk&&GetClientRect(child,&childRect)!=0,"corner first geometry query");
-        std::cout<<"NATIVE_GRIP_FIRST reported="<<size.getWidth()<<"x"<<size.getHeight()<<" child="<<childRect.right<<"x"<<childRect.bottom<<"\n";
-        require(size.getWidth()==1115&&size.getHeight()==669&&childRect.right==1115&&childRect.bottom==669,"corner drag intermediate zoom");
-        SendMessageW(child,WM_MOUSEMOVE,MK_LBUTTON,MAKELPARAM(1190,710));pumpGui(80);
-        require(view->getSize(&size)==kResultOk&&GetClientRect(child,&childRect)!=0,"corner second geometry query");
-        std::cout<<"NATIVE_GRIP_SECOND reported="<<size.getWidth()<<"x"<<size.getHeight()<<" child="<<childRect.right<<"x"<<childRect.bottom<<"\n";
-        require(size.getWidth()==1200&&size.getHeight()==720&&childRect.right==1200&&childRect.bottom==720,"corner drag second intermediate zoom");
-        SendMessageW(child,WM_LBUTTONUP,0,MAKELPARAM(1190,710));pumpGui(60);
-        require(GetClientRect(child,&childRect)!=0&&childRect.right==1200&&childRect.bottom==720,"corner native zoom geometry");
+        // Use a real desktop cursor and real button state for the grip.
+        // A posted/sent WM_MOUSEMOVE does NOT update the Windows cursor:
+        // after resizing, Windows generates a move at the real location.
+        SetWindowPos(host,HWND_TOPMOST,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE);
+        SetForegroundWindow(host);pumpGui(100);
+        POINT oldCursor{};require(GetCursorPos(&oldCursor)!=0,"save desktop cursor");
+        const auto moveCursor=[&](int x,int y){
+            POINT p{x,y};require(ClientToScreen(child,&p)!=0,"grip screen coordinates");
+            require(SetCursorPos(p.x,p.y)!=0,"real desktop pointer movement");
+            pumpGui(100);
+            POINT actual{};require(GetCursorPos(&actual)!=0&&actual.x==p.x&&actual.y==p.y,"desktop cursor reached requested point");
+        };
+        const auto button=[&](DWORD flags){
+            INPUT input{};input.type=INPUT_MOUSE;input.mi.dwFlags=flags;
+            require(SendInput(1,&input,sizeof(input))==1,"real desktop mouse button input");pumpGui(80);
+        };
+        const auto sizeIs=[&](int w,int h,const char* why){
+            require(view->getSize(&size)==kResultOk&&GetClientRect(child,&childRect)!=0,"corner geometry query");
+            std::cout<<"NATIVE_GRIP reported="<<size.getWidth()<<"x"<<size.getHeight()<<" child="<<childRect.right<<"x"<<childRect.bottom<<" expected="<<w<<"x"<<h<<"\n";
+            if(size.getWidth()!=w||size.getHeight()!=h||childRect.right!=w||childRect.bottom!=h){
+                INPUT release{};release.type=INPUT_MOUSE;release.mi.dwFlags=MOUSEEVENTF_LEFTUP;SendInput(1,&release,sizeof(release));
+                SetCursorPos(oldCursor.x,oldCursor.y);require(false,why);
+            }
+        };
+        // Shrink first, then grow through two non-preset sizes in the same
+        // gesture. Stay inside even a 1024x768 CI desktop.
+        moveCursor(950,566);require(WindowFromPoint([](HWND w){POINT p{950,566};ClientToScreen(w,&p);return p;}(child))==child,"corner is unobscured");
+        button(MOUSEEVENTF_LEFTDOWN);
+        moveCursor(805,479);sizeIs(815,489,"corner drag intermediate shrink");
+        moveCursor(890,530);sizeIs(900,540,"corner drag intermediate grow");
+        moveCursor(950,566);sizeIs(960,576,"corner drag returns to original size");
+        button(MOUSEEVENTF_LEFTUP);
+        SetCursorPos(oldCursor.x,oldCursor.y);pumpGui(60);
+        // Larger host-accepted geometry and scaled hit mapping are tested
+        // separately, independent of the desktop's physical dimensions.
+        ViewRect larger{0,0,1200,720};
+        require(view->checkSizeConstraint(&larger)==kResultOk&&frame->resizeView(view.get(),&larger)==kResultOk,"host larger geometry");pumpGui(80);
+        sizeIs(1200,720,"larger native geometry");
         ParamID scaledId=0;require(finder->findParameter(173,393,scaledId)==kResultTrue&&scaledId==100,"scaled knob hit mapping");
         require(view->checkSizeConstraint(&original)==kResultOk&&frame->resizeView(view.get(),&original)==kResultOk,"corner zoom restore");pumpGui(100);
         std::cout<<"NATIVE_CORNER_CONTINUOUS_ZOOM_PASS\n";

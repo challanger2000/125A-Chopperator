@@ -44,3 +44,5 @@ P008 reactive oracle 45314075565 FAIL: START change retained exactly baseline pi
 Runs 45314685057/45314850044 fail reactive preview after START drag despite compile/DSP/validator PASS. Dedicated timer + canonical draw-time refresh + controller notification and explicit repaint introduced. Dynamic pixel/zoom/help/recall remain NOT VERIFIED; forced repaint only diagnostic, not acceptance.
 
 Run 45415026213: independent composed-pixel preview gate passes all seven left-drag settings, zero stable pixel mismatches; prior child DC method returned stale image. Editor gate fails first corner drag intermediate zoom. New fix/diagnostics pending; no Studio Pro acceptance.
+
+45416468673 confirms responsive composed-pixel preview again. Grip reached requested 1115x669, then test's fake WM_MOUSEMOVE disagreed with real cursor after window resize. Real desktop pointer/button gesture fixture replaces synthetic grip movement; no reduced geometry gate. New Windows result pending.
