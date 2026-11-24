@@ -30,3 +30,5 @@ Knob Designer main 45565ff036eb469b9b0c092744233961b1dec837 identifies approved 
 Paths assets/mixengine/knobs/125A_MixEngine_Analog_{size}_{pixels}px_{scale}pct_128f.png. Verify actual bytes and dimensions; each strip vertical 128 frames. If a native graphics texture limit requires tiling, preserve frame order and pixels, verify all 128 frames at each scale, no lossy redraw or interpolation between frames.
 
 Status: layout and asset selection documented, no actual rendered static panel yet. Static panel must be completed and visually checked before GUI implementation, per central GUI guidelines. Native DSP unchanged.
+
+Static proof generator: `python tools/prepare_gui_design.py gui-draft` with ffmpeg. It verifies all eight official strips against exact blob hashes and geometry, crops the default frames without altering pixels and embeds the unchanged master logo in an SVG. The illustrative envelope is a derived preview of the defaults, not a live DSP trace; final editor uses the shared core. Generation/visual inspection NOT RUN; binary source access unavailable in current local session. Run on next Windows CI, not a separate speculative build.
