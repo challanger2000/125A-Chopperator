@@ -276,6 +276,7 @@ public:
         c->drawString("?",r,kCenterText);setDirty(false);
     }
     void onMouseDownEvent(VSTGUI::MouseDownEvent& e) override{
+        VSTGUI::CBaseObjectGuard keep(this);
         if(e.buttonState.isLeft()){prefs.changeHelp(!prefs.help);invalid();e.consumed=true;}
     }
 private:
@@ -489,9 +490,12 @@ protected:
         // On initial attachment and reentrant host acknowledgement, use
         // the SDK base path without overwriting the saved editor preferences.
         if(!opened||resizing)return VSTGUI::VST3Editor::onSize(r);
+        Steinberg::IPtr<Steinberg::IPlugView> keep(this);
         const auto oldZoom=getZoomFactor();
         const auto scale=getContentScaleFactor();
-        const auto factor=std::clamp(r->getWidth()/(960.*scale),.75,1.5);
+        // A DPI-only acknowledgement must not quantize logical user zoom.
+        const auto factor=syncing&&std::abs(r->getWidth()-960.*oldZoom*scale)<1.
+            ?oldZoom:std::clamp(r->getWidth()/(960.*scale),.75,1.5);
         if(r->getWidth()<std::floor(720*scale)||r->getWidth()>std::floor(1440*scale)||
            std::abs(r->getHeight()-r->getWidth()*.6)>1.01)return Steinberg::kResultFalse;
         if(std::getenv("CHOPPER_GUI_TRACE"))std::fprintf(stderr,"EDITOR_ACCEPT_SIZE %d x %d zoom=%.9f\n",r->getWidth(),r->getHeight(),factor);

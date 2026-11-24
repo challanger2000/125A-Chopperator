@@ -21,6 +21,7 @@
 #include <array>
 #include <chrono>
 #include <filesystem>
+#include <functional>
 #include <fstream>
 #include <thread>
 #include <cmath>
@@ -243,6 +244,32 @@ void waveformContracts(const VST3::Hosting::Module::Ptr& module){
     }
     std::cout<<"NATIVE_ALL_FIVE_SHAPES_PASS\n";
 }
+struct PacedOracle {
+    double position=.01,curve=1.,width=.5,phase=0.,gain=1.;
+    std::size_t frame=0;
+    double tick(std::size_t block,int sample){
+        const double fraction=(sample+1)/128.;
+        const double p=position+((block%2?.01:.99)-position)*fraction;
+        const double c=curve+((block%2?0.:1.)-curve)*fraction;
+        const double w=width+((block%2?.2:.9)-width)*fraction;
+        const double target=phase<w?.5-.5*std::cos(2*pi*phase/w):0.;
+        gain+=std::clamp(target-gain,-1./24,1./24);
+        // Exact per-sample integral by a separately written primitive,
+        // evaluated in long double; phase normalized to fractional cycles.
+        const long double m=.01L+.98L*p,exponent=std::pow(2.L,4.L*c-2.L);
+        auto primitive=[&](long double x){
+            if(x<=m)return x+63*m*std::pow(x/m,exponent+1)/(exponent+1);
+            const auto z=x-m;
+            return m*(1+63/(exponent+1))+64*z-63*(1-m)*std::pow(z/(1-m),exponent+1)/(exponent+1);
+        };
+        const long double a=static_cast<long double>(frame)/6144000.L;
+        const long double b=static_cast<long double>(frame+1)/6144000.L;
+        phase=std::fmod(phase+static_cast<double>(64*(primitive(b)-primitive(a))),1.);
+        ++frame;
+        if(sample==127){position=block%2?.01:.99;curve=block%2?0.:1.;width=block%2?.2:.9;}
+        return gain;
+    }
+};
 void realtimeProbe(const VST3::Hosting::Module::Ptr& module){
     using Clock=std::chrono::steady_clock;
     Native n(module);n.start(48000,kSample64,2);
@@ -253,7 +280,8 @@ void realtimeProbe(const VST3::Hosting::Module::Ptr& module){
     point(p,100,0,0);point(p,101,0,1);point(p,102,0,0);
     point(p,104,0,.01);point(p,105,0,1);n.flush(p,kSample64);
     std::array<double,384> micros{};
-    double inputEnergy=0,outputEnergy=0,differenceEnergy=0;
+    double inputEnergy=0,outputEnergy=0,differenceEnergy=0,oracleError=0,constantError=0;
+    PacedOracle oracle;
     const auto interval=std::chrono::duration_cast<Clock::duration>(std::chrono::duration<double>(128./48000));
     auto deadline=Clock::now();double sum=0;int over=0;
     for(std::size_t i=0;i<micros.size();++i){
@@ -271,6 +299,9 @@ void realtimeProbe(const VST3::Hosting::Module::Ptr& module){
                     b.orr[k]==-.5*b.ol[k],"paced bounded stereo output");
             inputEnergy+=b.l[k]*b.l[k];outputEnergy+=b.ol[k]*b.ol[k];
             const double delta=b.ol[k]-b.l[k];differenceEnergy+=delta*delta;
+            const double expected=b.l[k]*oracle.tick(i,k);
+            oracleError+=(b.ol[k]-expected)*(b.ol[k]-expected);
+            constantError+=(.5*b.l[k]-expected)*(.5*b.l[k]-expected);
         }
         deadline+=interval;std::this_thread::sleep_until(deadline);
     }
@@ -280,6 +311,9 @@ void realtimeProbe(const VST3::Hosting::Module::Ptr& module){
         <<" deadline_us="<<128./48000*1e6<<" callback_overruns="<<over<<"\n";
     require(inputEnergy>0&&outputEnergy/inputEnergy>.001&&differenceEnergy/inputEnergy>.001,
         "paced output neither silent nor unmodified");
+    require(oracleError/inputEnergy<1e-10&&constantError/inputEnergy>.01,"paced temporal PCM oracle rejects constant gain");
+    std::cout<<"PACED_TEMPORAL_ORACLE_PASS relative_squared_error="<<oracleError/inputEnergy
+        <<" constant_gain_negative="<<constantError/inputEnergy<<"\n";
     std::cout<<"PACED_NATIVE_SIGNAL_PASS wet_energy_ratio="<<outputEnergy/inputEnergy
         <<" change_energy_ratio="<<differenceEnergy/inputEnergy<<"\n";
     // A measured overrun blocks this gate; attribution to scheduler or
@@ -363,9 +397,11 @@ class GuiFrame final:public FObject, public IPlugFrame {
 public:
     explicit GuiFrame(HWND parent):parent_(parent){}
     bool deny=false;int requests=0;
+    std::function<tresult(IPlugView*,ViewRect*)> intercept;
     tresult PLUGIN_API resizeView(IPlugView* view,ViewRect* r) override{
         if(!view||!r)return kInvalidArgument;
         ++requests;if(deny)return kResultFalse;
+        if(intercept){auto callback=std::move(intercept);intercept={};return callback(view,r);}
         RECT outer{0,0,r->getWidth(),r->getHeight()};
         AdjustWindowRectEx(&outer,WS_OVERLAPPEDWINDOW,FALSE,WS_EX_TOOLWINDOW);
         SetWindowPos(parent_,nullptr,0,0,outer.right-outer.left,outer.bottom-outer.top,SWP_NOMOVE|SWP_NOZORDER|SWP_NOACTIVATE);
@@ -552,6 +588,30 @@ void valueEntryContract(Native& n,GuiHandler& handler,HWND child){
         require(std::abs(n.controller->getParamNormalized(107)-(commit?.3725:.8))<1e-9&&
                 handler.edits[7]-edits[7]==(commit?1:0),"text commit/cancel after automation");
     }
+    for(int mode=0;mode<4;++mode){
+        require(n.controller->setParamNormalized(107,.5)==kResultOk,"recall text baseline");pumpGui(80);
+        SendMessageW(child,WM_LBUTTONDBLCLK,MK_LBUTTON,MAKELPARAM(404,509));
+        SendMessageW(child,WM_LBUTTONUP,0,MAKELPARAM(404,509));pumpGui(80);
+        HWND field=GetFocus();wchar_t cls[64]{};
+        require(field&&field!=child&&GetClassNameW(field,cls,64)&&_wcsicmp(cls,L"Edit")==0,"recall edit field");
+        require(SetWindowTextW(field,L"37.25")!=0,"recall local text");
+        auto state=n.save();const double width=.8;std::memcpy(state.data()+8+7*8,&width,8);
+        if(mode==3)state.resize(119);
+        MemoryStream stream(state.data(),static_cast<TSize>(state.size()));
+        const auto edits=handler.edits,begins=handler.begins,ends=handler.ends;
+        require((n.controller->setComponentState(&stream)==kResultOk)==(mode!=3),"recall while editing");
+        pumpGui(80);
+        if(mode==2)SetFocus(child);
+        else SendMessageW(field,WM_KEYDOWN,mode==1?VK_ESCAPE:VK_RETURN,1);
+        pumpGui(100);
+        require(!IsWindow(field)||GetFocus()!=field,"recall text closes");
+        require(std::abs(n.controller->getParamNormalized(107)-(mode==3?.3725:.8))<1e-9,"stale recall text never commits");
+        for(std::size_t i=0;i<edits.size();++i){
+            const int delta=mode==3&&i==7?1:0;
+            require(handler.edits[i]-edits[i]==delta&&handler.begins[i]-begins[i]==delta&&handler.ends[i]-ends[i]==delta,"recall text edit gestures");
+        }
+    }
+    std::cout<<"NATIVE_P009_RECALL_TEXT_EPOCH_PASS\n";
     std::cout<<"NATIVE_P009_TEXT_AUTOMATION_PASS\n";
     std::cout<<"NATIVE_DOUBLE_CLICK_ALL_10_READOUTS_PASS\n";
 }
@@ -1095,7 +1155,28 @@ void liveUIAudit(const VST3::Hosting::Module::Ptr& module){
     require(fa->resizeView(a.get(),&zoom)==kResultOk,"user resize");pumpGui(100);
     geom(a.get(),ca,1200,720);geom(b.get(),cb,1200,720);saved(1.25,0);
     require(handler->dirtyCalls==3,"user zoom dirty exactly once");
-    require(a->removed()==kResultOk&&a->setFrame(nullptr)==kResultOk,"first close");
+    // Noninteger DPI using the actual SDK pixel rounding; retain user zoom.
+    for(double z:{.75,1.,1.5}){
+        load(z,0);
+        require(dpi->setContentScaleFactor(1.28f)==kResultOk,"fractional DPI accepted");pumpGui(80);
+        const int width=static_cast<int>(std::floor(960*z*double(1.28f)));
+        const int height=static_cast<int>(std::floor(576*z*double(1.28f)));
+        geom(a.get(),ca,width,height);saved(z,0);
+        require(dpi->setContentScaleFactor(1.f)==kResultOk,"fractional DPI reset");pumpGui(80);
+        geom(a.get(),ca,int(960*z),int(576*z));saved(z,0);
+    }
+    load(1.25,0);
+    // Synchronous host detach of the first view during its own resize
+    // notification. Later registered peer must still receive the recall.
+    const auto beforePeer=fb->requests;
+    fa->intercept=[&](IPlugView* v,ViewRect*){
+        require(v==a.get()&&v->removed()==kResultOk&&v->setFrame(nullptr)==kResultOk,"reentrant current view detach");
+        return kResultFalse;
+    };
+    load(1.,1);
+    require(!IsWindow(ca)&&fb->requests>beforePeer,"reentrant detach preserves later peer");
+    geom(b.get(),cb,960,576);saved(1.,1);
+    std::cout<<"NATIVE_P009_FRACTIONAL_DPI_REENTRANT_DETACH_PASS\n";
     DestroyWindow(ha);pumpGui(80);require(!IsWindow(ca)&&IsWindow(cb),"only first child closed");
     load(1.,1);geom(b.get(),cb,960,576);saved(1.,1);
     require(handler->dirtyCalls==3,"surviving view recall not dirty");
