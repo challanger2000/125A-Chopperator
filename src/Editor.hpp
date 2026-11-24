@@ -27,9 +27,21 @@ struct EditorPreferences {
     // GUI-thread-only registry. An editor can be created, removed or reopened
     // independently of the processing component. No audio-thread accesses.
     struct Watch { const void* owner; std::function<void()> update; };
-    std::vector<Watch> watches;
+    std::vector<Watch> watches,uiWatches;
+    std::function<void()> markDirty;
     void notify(){for(auto& w:watches)w.update();}
-    void remove(const void* owner){std::erase_if(watches,[owner](const auto& w){return w.owner==owner;});}
+    void notifyUI(){for(auto& w:uiWatches)w.update();}
+    void remove(const void* owner){
+        const auto match=[owner](const auto& w){return w.owner==owner;};
+        std::erase_if(watches,match);std::erase_if(uiWatches,match);
+    }
+    void restore(double z,bool h){zoom=z;help=h;notifyUI();}
+    void changeZoom(double z){
+        if(zoom==z)return;zoom=z;if(markDirty)markDirty();notifyUI();
+    }
+    void changeHelp(bool h){
+        if(help==h)return;help=h;if(markDirty)markDirty();notifyUI();
+    }
 };
 // SDK-native CTextEdit opens its platform field only on double click.
 // Keep the raw user entry intact through the SDK's valueChanged callback;
@@ -40,6 +52,10 @@ public:
         setImmediateTextChange(false);
     }
     void setText(const VSTGUI::UTF8String& txt) override{
+        // Controller automation may update the canonical value while the
+        // platform field is open. The unfinished user string wins until
+        // commit/cancel. looseFocus refreshes from the latest controller.
+        if(getPlatformTextEdit())return;
         if(rawNext){rawNext=false;CTextEdit::setText(txt);return;}
         if(getTag()<104){CTextEdit::setText(txt);return;}
         auto text=txt.getString();
@@ -257,21 +273,20 @@ private:
 // Editor-only controls: no VST3 parameter, automation or DSP mutation.
 class HelpButton final:public VSTGUI::CView{
 public:
-    HelpButton(bool initial,std::function<void(bool)> cb):CView(VSTGUI::CRect(496,20,520,44)),change(std::move(cb)),enabled(initial){}
+    HelpButton(EditorPreferences& p):CView(VSTGUI::CRect(496,20,520,44)),prefs(p){}
     void draw(VSTGUI::CDrawContext* c) override{
         using namespace VSTGUI;
         auto r=getViewSize();r.inset(2,2);
-        c->setFillColor(enabled?CColor(232,155,64,255):CColor(36,39,42,255));
+        c->setFillColor(prefs.help?CColor(232,155,64,255):CColor(36,39,42,255));
         c->setFrameColor(CColor(109,109,109,255));c->setLineWidth(1);c->drawEllipse(r,kDrawFilledAndStroked);
-        c->setFont(kNormalFont);c->setFontColor(enabled?CColor(16,17,19,255):CColor(226,227,228,255));
+        c->setFont(kNormalFont);c->setFontColor(prefs.help?CColor(16,17,19,255):CColor(226,227,228,255));
         c->drawString("?",r,kCenterText);setDirty(false);
     }
     void onMouseDownEvent(VSTGUI::MouseDownEvent& e) override{
-        if(e.buttonState.isLeft()){enabled=!enabled;change(enabled);invalid();e.consumed=true;}
+        if(e.buttonState.isLeft()){prefs.changeHelp(!prefs.help);invalid();e.consumed=true;}
     }
 private:
-    std::function<void(bool)> change;
-    bool enabled=false;
+    EditorPreferences& prefs;
 };
 class ResizeGrip final:public VSTGUI::CView{
 public:
@@ -374,10 +389,10 @@ protected:
         return result;
     }
     void onMouseEntered(VSTGUI::CView* view,VSTGUI::CFrame*) override{
-        if(!preferences.help||!helpOverlay)return;
+        if(!helpOverlay)return;
         if(auto* control=dynamic_cast<VSTGUI::CControl*>(view)){
             const auto tag=control->getTag();
-            if(tag>=100&&tag<=112){hovered=view;helpOverlay->show(tag,view->getViewSize());}
+            if(tag>=100&&tag<=112){hovered=view;if(preferences.help)helpOverlay->show(tag,view->getViewSize());}
         }
     }
     void onMouseExited(VSTGUI::CView* view,VSTGUI::CFrame*) override{
@@ -390,6 +405,7 @@ protected:
     void onViewRemoved(VSTGUI::CFrame* frame,VSTGUI::CView* view) override{
         if(view==hovered){hovered=nullptr;if(helpOverlay)helpOverlay->hide();}
         if(view==helpOverlay)helpOverlay=nullptr;
+        if(view==helpButton)helpButton=nullptr;
         AspectRatioVST3Editor::onViewRemoved(frame,view);
     }
     bool PLUGIN_API open(void* parent,const VSTGUI::PlatformType& type) override{
@@ -405,10 +421,28 @@ protected:
         }
         auto* logo=desc->getBitmap("logo");
         if(!logo||!logo->isLoaded()||logo->getWidth()!=84||logo->getHeight()!=42)return false;
+        auto logo3=logo->getBestPlatformBitmapForScaleFactor(3.);
+        if(!logo3||logo3->getScaleFactor()!=3.)return false;
+        setZoomFactor(preferences.zoom);
         const bool ok=AspectRatioVST3Editor::open(parent,type);
-        opened=ok;return ok;
+        opened=ok;
+        if(ok)preferences.uiWatches.push_back({this,[this]{syncPreferences();}});
+        return ok;
     }
-    void PLUGIN_API close() override{opened=false;hovered=nullptr;helpOverlay=nullptr;AspectRatioVST3Editor::close();}
+    void PLUGIN_API close() override{
+        preferences.remove(this);opened=false;hovered=nullptr;helpOverlay=nullptr;helpButton=nullptr;
+        AspectRatioVST3Editor::close();
+    }
+#ifdef VST3_CONTENT_SCALE_SUPPORT
+    Steinberg::tresult PLUGIN_API setContentScaleFactor(ScaleFactor factor) override{
+        if(!std::isfinite(factor)||factor<=0||factor>10000)return Steinberg::kInvalidArgument;
+        // Our onSize owns user zoom; the aspect editor's private zoom cache
+        // must not reapply an older factor after the host DPI changes.
+        const bool wasSyncing=syncing;syncing=true;
+        const auto result=VSTGUI::VST3Editor::setContentScaleFactor(factor);
+        syncing=wasSyncing;return result;
+    }
+#endif
     bool beforeSizeChange(const VSTGUI::CRect& newSize,const VSTGUI::CRect& oldSize) override{
         // The host already accepted this size via onSize. Do not ask it
         // again while applying its acknowledgement to the native frame.
@@ -427,9 +461,10 @@ protected:
         resizing=true;
         setZoomFactor(factor);
         const auto result=VSTGUI::VST3Editor::onSize(r);
-        if(result==Steinberg::kResultTrue)preferences.zoom=factor;
-        else setZoomFactor(oldZoom);
-        resizing=false;return result;
+        if(result!=Steinberg::kResultTrue)setZoomFactor(oldZoom);
+        resizing=false;
+        if(result==Steinberg::kResultTrue&&!syncing)preferences.changeZoom(factor);
+        return result;
     }
     Steinberg::tresult PLUGIN_API checkSizeConstraint(Steinberg::ViewRect* r) override{
         if(!r)return Steinberg::kInvalidArgument;
@@ -441,9 +476,7 @@ protected:
     VSTGUI::CView* createView(const VSTGUI::UIAttributes& attrs,const VSTGUI::IUIDescription* desc) override{
         const auto* name=attrs.getAttributeValue("custom-view-name");
         if(name&&*name=="GlassFaceplate")return new GlassFaceplate();
-        if(name&&*name=="HelpButton")return new HelpButton(preferences.help,[this](bool enabled){
-            preferences.help=enabled;if(helpOverlay)helpOverlay->hide();hovered=nullptr;
-        });
+        if(name&&*name=="HelpButton"){helpButton=new HelpButton(preferences);return helpButton;}
         if(name&&*name=="HelpOverlay"){helpOverlay=new HelpOverlay();return helpOverlay;}
         if(name&&*name=="ResizeGrip")return new ResizeGrip([this]{return getZoomFactor()*getContentScaleFactor();},[this](double width){
             Steinberg::ViewRect r{0,0,static_cast<Steinberg::int32>(std::lround(std::clamp(width,720*getContentScaleFactor(),1440*getContentScaleFactor()))),0};
@@ -458,9 +491,28 @@ protected:
         return AspectRatioVST3Editor::createView(attrs,desc);
     }
 private:
+    void syncPreferences(){
+        if(!opened)return;
+        if(helpButton)helpButton->invalid();
+        if(helpOverlay){
+            if(preferences.help&&hovered){
+                if(auto* control=dynamic_cast<VSTGUI::CControl*>(hovered))
+                    helpOverlay->show(control->getTag(),hovered->getViewSize());
+            }else helpOverlay->hide();
+        }
+        if(syncing||std::abs(getZoomFactor()-preferences.zoom)<1e-9)return;
+        const auto width=std::lround(960*preferences.zoom*getContentScaleFactor());
+        const auto height=std::floor(width*.6);
+        // A peer view may be denied by its own host. Do not overwrite the
+        // shared desired zoom or claim that the rejected geometry applied.
+        syncing=true;
+        requestResize(VSTGUI::CPoint(static_cast<double>(width),height));
+        syncing=false;
+    }
     EditorPreferences& preferences;
     HelpOverlay* helpOverlay=nullptr;
+    HelpButton* helpButton=nullptr;
     VSTGUI::CView* hovered=nullptr;
-    bool opened=false,resizing=false;
+    bool opened=false,resizing=false,syncing=false;
 };
 }

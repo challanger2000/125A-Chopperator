@@ -11,7 +11,10 @@ inline std::string_view trimEntry(std::string_view s){
 inline bool entryNumber(std::string_view text,double& value){
     text=trimEntry(text);
     if(text.empty())return false;
-    if(text.front()=='+')text.remove_prefix(1);
+    if(text.front()=='+'){
+        text.remove_prefix(1);
+        if(text.empty()||text.front()=='+'||text.front()=='-')return false;
+    }
     if(text.empty())return false;
     const auto result=std::from_chars(text.data(),text.data()+text.size(),value,std::chars_format::fixed);
     return result.ec==std::errc{}&&result.ptr==text.data()+text.size()&&std::isfinite(value);

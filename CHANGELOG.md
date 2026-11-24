@@ -57,3 +57,8 @@
 - Simplify contextual help to a centered muted text line without panel or border.
 - Add restrained glass-like faceplate lighting, recessed panel shading and fine display rim, preserving original controls and pulse geometry.
 - Increase glass faceplate reflection contrast and bevel lighting after owner visual feedback.
+
+
+## P009 / 0.9.0 development candidate — NOT RELEASED
+- Targeted audit corrections: independent tempo/meter validity, state stream return codes and counts, inactive bus access, representable clock/setup, strict numeric input, live UI preferences and DPI scaling, retained text edit, high-DPI logo and pinned dependency notices.
+- Actual loaded VST3 counterexamples and standalone core rollback tests added; existing evidence and tests preserved. Native UI interactions, exact Windows results and final package acceptance still unverified at commit time.

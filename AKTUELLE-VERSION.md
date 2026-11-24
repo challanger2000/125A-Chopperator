@@ -1,3 +1,6 @@
+# Current development state — P009 / 0.9.0 candidate
+Targeted remediation of the P008 independent Codex audit and previous adversarial audit. Baseline 33d81e8a2a66c95999207819efeecfe9de313ede, main, sole approved development branch, no commercial release. Changes are **UNVERIFIED until exact P009 build/test evidence**. Historical P008 Windows result is not P009 evidence. Owner-approved Glass V2 artwork and control geometry, normal DSP law, parameter IDs and state byte formats retained. See [P009 remediation](docs/P009-REMEDIATION.md).
+
 # Current version
 Audit disposition 2026-11-24: owner accepted Glass V2 visuals. [Adversarial audit](docs/P008-ADVERSARIAL-AUDIT.md): PARTIAL / NOT VERIFIED, RELEASE NO-GO; two executed source failures, source-level GUI/host findings and missing license notices. No product code modified; exact verified RC remains the reference for repair. Codex/full Test Lab/DAW gates pending.
 

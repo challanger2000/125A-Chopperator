@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.25)
-project(Chopperator VERSION 0.8.0 LANGUAGES CXX)
+project(Chopperator VERSION 0.9.0 LANGUAGES CXX)
 include(CTest)
 find_package(Threads REQUIRED)
 add_executable(chopper_core_tests tests/CoreTests.cpp)
@@ -46,6 +46,14 @@ if(CHOPPER_BUILD_VST3)
     ${CHOPPER_GUI_DIR}/logo.png ${CHOPPER_GUI_DIR}/logo_3x.png
     ${CHOPPER_GUI_DIR}/knob_L_0.5x.png ${CHOPPER_GUI_DIR}/knob_L_0.75x.png ${CHOPPER_GUI_DIR}/knob_L_200.png ${CHOPPER_GUI_DIR}/knob_L_1.5x.png
     ${CHOPPER_GUI_DIR}/knob_S_0.5x.png ${CHOPPER_GUI_DIR}/knob_S_0.75x.png ${CHOPPER_GUI_DIR}/knob_S_200.png ${CHOPPER_GUI_DIR}/knob_S_1.5x.png)
+  set(CHOPPER_NOTICE_FILES
+    ${vst3sdk_SOURCE_DIR}/LICENSE.txt
+    ${vst3sdk_SOURCE_DIR}/vstgui4/LICENSE)
+  foreach(notice IN LISTS CHOPPER_NOTICE_FILES)
+    if(NOT EXISTS "${notice}")
+      message(FATAL_ERROR "Missing pinned SDK license: ${notice}")
+    endif()
+  endforeach()
   # SDK resource helper emits an unquoted VS macro for package paths with
   # spaces. Use the actual binary directory and VERBATIM commands instead.
   foreach(asset IN LISTS CHOPPER_GUI_FILES)
@@ -56,7 +64,9 @@ if(CHOPPER_BUILD_VST3)
   add_custom_target(chopper_gui_resources ALL
     COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:Chopperator>/../Resources"
     COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CHOPPER_GUI_FILES} "$<TARGET_FILE_DIR:Chopperator>/../Resources"
-    DEPENDS Chopperator ${CHOPPER_GUI_FILES}
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different "${vst3sdk_SOURCE_DIR}/LICENSE.txt" "$<TARGET_FILE_DIR:Chopperator>/../Resources/Steinberg-VST3-LICENSE.txt"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different "${vst3sdk_SOURCE_DIR}/vstgui4/LICENSE" "$<TARGET_FILE_DIR:Chopperator>/../Resources/VSTGUI-LICENSE.txt"
+    DEPENDS Chopperator ${CHOPPER_GUI_FILES} ${CHOPPER_NOTICE_FILES}
     VERBATIM)
   target_sources(Chopperator PRIVATE ${vst3sdk_SOURCE_DIR}/public.sdk/source/main/dllmain.cpp)
   smtg_target_configure_version_file(Chopperator)

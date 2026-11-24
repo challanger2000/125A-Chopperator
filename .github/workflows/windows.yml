@@ -42,6 +42,12 @@ jobs:
           $plugin = Resolve-Path 'artifact/125A Chopperator.vst3'
           $binary = Join-Path $plugin 'Contents/x86_64-win/125A Chopperator.vst3'
           if (-not (Test-Path $binary -PathType Leaf)) { throw "Plugin bundle and inner binary naming mismatch" }
+          $resources = Join-Path $plugin 'Contents/Resources'
+          foreach ($pair in @(@('Steinberg-VST3-LICENSE.txt','build/_deps/vst3sdk-src/LICENSE.txt'),@('VSTGUI-LICENSE.txt','build/_deps/vst3sdk-src/vstgui4/LICENSE'))) {
+            $actual = Join-Path $resources $pair[0]
+            if (-not (Test-Path $actual -PathType Leaf) -or -not (Test-Path $pair[1] -PathType Leaf)) { throw "Missing required license notice" }
+            if ((Get-FileHash $actual).Hash -ne (Get-FileHash $pair[1]).Hash) { throw "License notice hash mismatch" }
+          }
           $validator = @(Get-ChildItem build -Recurse -File -Filter validator.exe | Where-Object { $_.FullName -match 'Release' })
           if ($validator.Count -ne 1) { throw "Expected exactly one Release validator" }
           & $validator[0].FullName $plugin.Path
@@ -113,7 +119,8 @@ jobs:
           foreach ($report in $reports) { Copy-Item $report.FullName evidence; Get-Content $report.FullName }
           $qa = @($reports | Where-Object { $_.Name -like '*_125A_QA_Report.txt' })
           if ($process.ExitCode -ne 0 -or $qa.Count -ne 1) { throw "Tester failed or missing report: exit $($process.ExitCode)" }
-          if (Select-String -Path $qa[0].FullName -Pattern '\[FAIL\]' -Quiet) { throw "Tester reported FAIL" }
+          if (Select-String -Path $qa[0].FullName -Pattern '\[(FAIL|WARNING|SKIP|NOT RUN|NOT VERIFIED)\]' -Quiet) { throw "Tester reported failure, warning or unverified test" }
+          if (@(Select-String -Path $qa[0].FullName -Pattern '\[PASS\]').Count -lt 57) { throw "Tester report missing required positive evidence" }
           Get-FileHash (Join-Path $plugin 'Contents/x86_64-win/125A Chopperator.vst3') -Algorithm SHA256 | Format-List
           Write-Host "INDEPENDENT_TESTER_EXECUTION_PASS"
       - name: Generate static GUI draft with original 125A assets
@@ -125,10 +132,10 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: 125A-Chopperator-P008-QA-evidence
+          name: 125A-Chopperator-P009-QA-evidence
           path: evidence
           if-no-files-found: warn
       - uses: actions/upload-artifact@v4
         with:
-          name: 125A-Chopperator-P008-Windows-x64-development
+          name: 125A-Chopperator-P009-Windows-x64-development
           path: artifact

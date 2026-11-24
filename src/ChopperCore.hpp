@@ -53,7 +53,7 @@ inline double shapeAt(Shape shape,double phase,double width) noexcept {
 class Core {
 public:
     bool prepare(double sampleRate) noexcept {
-        if(!std::isfinite(sampleRate)||sampleRate<=0)return false;
+        if(!clockUsable(sampleRate,bpm_,quartersPerBar_))return false;
         sr_=sampleRate;active_=running_=false;
         progress_=phase_=correction_=0;gain_=1;return true;
     }
@@ -64,8 +64,7 @@ public:
     bool setClock(double bpm,int numerator,int denominator) noexcept {
         if(!std::isfinite(bpm)||bpm<=0||numerator<=0||denominator<=0)return false;
         const double q=4.0*numerator/denominator;
-        const double step=bpm/(60*sr_*q*settings_.bars);
-        if(!std::isfinite(step)||step<=0)return false;
+        if(!clockUsable(sr_,bpm,q))return false;
         bpm_=bpm;quartersPerBar_=q;return true;
     }
     void setActive(bool active) noexcept {
@@ -98,6 +97,18 @@ public:
         }
     }
 private:
+    // Validate the complete supported LENGTH range before mutating clock or
+    // setup. Preserve the existing arithmetic for ordinary rates and tempo.
+    static bool clockUsable(double sr,double bpm,double q) noexcept {
+        if(!std::isfinite(sr)||sr<=0||!std::isfinite(bpm)||bpm<=0||
+           !std::isfinite(q)||q<=0)return false;
+        const double denMin=60*sr*q*.25,denMax=60*sr*q*64;
+        if(!std::isfinite(denMin)||denMin<=0||!std::isfinite(denMax)||denMax<=0)return false;
+        const double dxMin=bpm/denMax,dxMax=bpm/denMin,period=240/bpm;
+        return std::isfinite(dxMin)&&dxMin>0&&std::isfinite(dxMax)&&dxMax>0&&
+               std::isfinite(period)&&period>0&&std::isfinite(period*sr)&&
+               std::isfinite((q*64/4)*(dxMax+1)*64);
+    }
     void advance()noexcept {
         const double scale=quartersPerBar_*settings_.bars/4;
         const double dx=bpm_/(60*sr_*quartersPerBar_*settings_.bars);

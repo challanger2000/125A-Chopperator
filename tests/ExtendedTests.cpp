@@ -1,4 +1,5 @@
 #include "Parameters.hpp"
+#include "ValueEntry.hpp"
 #include <cstdlib>
 #include <iostream>
 #include <limits>
@@ -42,5 +43,20 @@ int main(){
         Core u;check(u.prepare(sr)&&u.configure(s)&&u.setClock(120,7,8),"unusual sample rate");u.setActive(true);
         for(int i=0;i<2048;++i){const double g=u.tick();check(g>=0&&g<=1,"unusual finite gain");}
     }
+    // P009: reproduce the original malformed sign and stalled extreme setup.
+    double parsed=.42;
+    check(!parseEntry(Param::curve,"+-25%",parsed)&&parsed==.42,"double sign rejected");
+    check(!parseEntry(Param::curve,"++25%",parsed)&&parsed==.42,"double plus rejected");
+    check(parseEntry(Param::curve,"-25%",parsed)&&parsed==.375,"negative curve valid");
+    check(parseEntry(Param::curve,"+25%",parsed)&&parsed==.625,"positive curve valid");
+    Core running,reference;
+    check(running.prepare(48000)&&reference.prepare(48000),"P009 prepare baseline");
+    running.setActive(true);reference.setActive(true);
+    for(int i=0;i<128;++i)check(running.tick()==reference.tick(),"P009 initial PCM");
+    const double progress=running.progress(),phase=running.phase();
+    check(!running.prepare(std::numeric_limits<double>::max())&&running.progress()==progress&&
+          running.phase()==phase&&running.running(),"extreme setup atomic rejection");
+    for(int i=0;i<4096;++i)check(running.tick()==reference.tick()&&running.phase()==reference.phase(),"P009 rollback exact PCM");
+    std::cout<<"P009 parser and clock rollback PASS\n";
     std::cout<<"P002 parameter and envelope contract PASS\n";
 }

@@ -8,7 +8,8 @@
 #include "pluginterfaces/vst/ivstprocesscontext.h"
 #include "pluginterfaces/vst/vstspeaker.h"
 #include "pluginterfaces/base/ustring.h"
-#include "base/source/fstreamer.h"
+#include "pluginterfaces/base/ibstream.h"
+#include <bit>
 #include <string>
 #include <type_traits>
 
@@ -18,9 +19,38 @@ using namespace Steinberg::Vst;
 static const FUID processorUID(0x9E3CD521,0xCD4A4D86,0xB855E192,0x3BEA0D41);
 static const FUID controllerUID(0x3FA4C7C1,0x951A4C05,0xA31B85B0,0x5FCA2602);
 constexpr uint32 magic=0x31504843u;
+// IBStreamer in the pinned SDK accepts a full byte count even when the
+// underlying stream returns an error. Require BOTH status and exact count.
+// The existing little-endian uint32/double wire representation is unchanged.
+class CheckedStateStream {
+public:
+    explicit CheckedStateStream(IBStream* s):stream(s){}
+    bool readInt32u(uint32& v){return readLE(v);}
+    bool writeInt32u(uint32 v){return writeLE(v);}
+    bool readDouble(double& v){uint64 bits=0;if(!readLE(bits))return false;v=std::bit_cast<double>(bits);return true;}
+    bool writeDouble(double v){return writeLE(std::bit_cast<uint64>(v));}
+private:
+    template<class U> bool readLE(U& value){
+        std::array<unsigned char,sizeof(U)> bytes{};
+        int32 count=0;
+        if(!stream||stream->read(bytes.data(),static_cast<int32>(bytes.size()),&count)!=kResultOk||
+           count!=static_cast<int32>(bytes.size()))return false;
+        U staged=0;
+        for(std::size_t i=0;i<bytes.size();++i)staged|=static_cast<U>(bytes[i])<<(8*i);
+        value=staged;return true;
+    }
+    template<class U> bool writeLE(U value){
+        std::array<unsigned char,sizeof(U)> bytes{};
+        for(std::size_t i=0;i<bytes.size();++i)bytes[i]=static_cast<unsigned char>(value>>(8*i));
+        int32 count=0;
+        return stream&&stream->write(bytes.data(),static_cast<int32>(bytes.size()),&count)==kResultOk&&
+               count==static_cast<int32>(bytes.size());
+    }
+    IBStream* stream;
+};
 bool decode(IBStream* stream,Parameters& result){
     if(!stream)return false;
-    IBStreamer s(stream,kLittleEndian);
+    CheckedStateStream s(stream);
     uint32 tag=0,version=0;
     if(!s.readInt32u(tag)||!s.readInt32u(version)||tag!=magic||version!=1)return false;
     Parameters staged;
@@ -32,7 +62,7 @@ bool decode(IBStream* stream,Parameters& result){
 }
 bool encode(IBStream* stream,const Parameters& values){
     if(!stream)return false;
-    IBStreamer s(stream,kLittleEndian);
+    CheckedStateStream s(stream);
     if(!s.writeInt32u(magic)||!s.writeInt32u(1))return false;
     for(std::size_t i=0;i<parameterCount;++i)if(!s.writeDouble(values.get(static_cast<Param>(100+i))))return false;
     return true;
@@ -112,10 +142,20 @@ public:
         if(data.numSamples<0)return kInvalidArgument;
         engine_.adopt();
         if(auto* c=data.processContext){
-            const double bpm=(c->state&ProcessContext::kTempoValid)?c->tempo:bpm_;
-            const int32 n=(c->state&ProcessContext::kTimeSigValid)?c->timeSigNumerator:n_;
-            const int32 d=(c->state&ProcessContext::kTimeSigValid)?c->timeSigDenominator:d_;
+            // Each validity flag describes its own field. A malformed meter
+            // must not suppress valid tempo, and vice versa.
+            const bool tempo=(c->state&ProcessContext::kTempoValid)&&std::isfinite(c->tempo)&&c->tempo>0;
+            const bool meter=(c->state&ProcessContext::kTimeSigValid)&&c->timeSigNumerator>0&&c->timeSigDenominator>0;
+            const double bpm=tempo?c->tempo:bpm_;
+            const int32 n=meter?c->timeSigNumerator:n_,d=meter?c->timeSigDenominator:d_;
             if(engine_.clock(bpm,n,d)){bpm_=bpm;n_=n;d_=d;}
+            else {
+                // Individually well-formed fields can still form an
+                // unrepresentable clock. Try each independently, retaining
+                // the most recent usable counterpart.
+                if(tempo&&engine_.clock(bpm,n_,d_))bpm_=bpm;
+                if(meter&&engine_.clock(bpm_,n,d)){n_=n;d_=d;}
+            }
         }
         std::array<Lane,parameterCount> lanes{};
         std::array<bool,parameterCount> seen{};
@@ -147,12 +187,16 @@ public:
 private:
     template<class S> void render(ProcessData& d,std::array<Lane,parameterCount>& lanes,std::size_t used) noexcept{
         S** input=nullptr;S** output=nullptr;int32 inputs=0,outputs=0;
-        if(d.inputs&&d.numInputs>0){
+        const auto* inputBus=getAudioInput(0);
+        const auto* outputBus=getAudioOutput(0);
+        const bool inputActive=inputBus&&inputBus->isActive();
+        const bool outputActive=outputBus&&outputBus->isActive();
+        if(inputActive&&d.inputs&&d.numInputs>0){
             inputs=std::clamp(d.inputs[0].numChannels,0,2);
             if constexpr(std::is_same_v<S,float>)input=d.inputs[0].channelBuffers32;
             else input=d.inputs[0].channelBuffers64;
         }
-        if(d.outputs&&d.numOutputs>0){
+        if(outputActive&&d.outputs&&d.numOutputs>0){
             outputs=std::clamp(d.outputs[0].numChannels,0,2);
             if constexpr(std::is_same_v<S,float>)output=d.outputs[0].channelBuffers32;
             else output=d.outputs[0].channelBuffers64;
@@ -169,7 +213,7 @@ private:
                 output[c][i]=y;if(y!=S{0})silence&=~(uint64{1}<<c);
             }
         }
-        if(d.outputs&&d.numOutputs>0)d.outputs[0].silenceFlags=silence;
+        if(outputActive&&d.outputs&&d.numOutputs>0)d.outputs[0].silenceFlags=silence;
     }
     HostEngine engine_;
     double rate_{48000},bpm_{120};int32 n_{4},d_{4};
@@ -194,6 +238,7 @@ public:
     }
     tresult PLUGIN_API initialize(FUnknown* context) override{
         auto r=EditController::initialize(context);if(r!=kResultOk)return r;
+        ui.markDirty=[this]{(void)setDirty(true);};
         const TChar* names[]={STR16("START"),STR16("MID"),STR16("END"),STR16("LENGTH"),
             STR16("MID POSITION"),STR16("CURVE"),STR16("SHAPE"),STR16("WIDTH"),STR16("ATTACK"),
             STR16("RELEASE"),STR16("MIX"),STR16("ACTIVE"),STR16("MODE"),STR16("BYPASS")};
@@ -242,16 +287,16 @@ public:
     // Component/preset recall leaves UI preferences unchanged.
     tresult PLUGIN_API getState(IBStream* stream) override{
         if(!stream)return kInvalidArgument;
-        IBStreamer s(stream,kLittleEndian);
+        CheckedStateStream s(stream);
         return s.writeInt32u(0x31554943u)&&s.writeInt32u(1)&&s.writeDouble(ui.zoom)&&s.writeInt32u(ui.help?1:0)?kResultOk:kResultFalse;
     }
     tresult PLUGIN_API setState(IBStream* stream) override{
         if(!stream)return kInvalidArgument;
-        IBStreamer s(stream,kLittleEndian);
+        CheckedStateStream s(stream);
         uint32 tag=0,version=0,help=0;double zoom=0;
         if(!s.readInt32u(tag)||!s.readInt32u(version)||!s.readDouble(zoom)||!s.readInt32u(help)||
             tag!=0x31554943u||version!=1||!std::isfinite(zoom)||zoom<.75||zoom>1.5||help>1)return kResultFalse;
-        ui.zoom=zoom;ui.help=help!=0;return kResultOk;
+        ui.restore(zoom,help!=0);return kResultOk;
     }
     tresult PLUGIN_API setComponentState(IBStream* stream) override{
         Parameters p;if(!decode(stream,p))return kResultFalse;
@@ -266,8 +311,8 @@ private:
 BEGIN_FACTORY("125A Systems","","",Steinberg::PFactoryInfo::kNoFlags)
 DEF_CLASS2(INLINE_UID_FROM_FUID(chopper::processorUID),Steinberg::PClassInfo::kManyInstances,
     kVstAudioEffectClass,"125A Chopperator",Steinberg::Vst::kDistributable,"Fx|Modulation",
-    "0.8.0",kVstVersionString,chopper::Processor::createInstance)
+    "0.9.0",kVstVersionString,chopper::Processor::createInstance)
 DEF_CLASS2(INLINE_UID_FROM_FUID(chopper::controllerUID),Steinberg::PClassInfo::kManyInstances,
     kVstComponentControllerClass,"125A Chopperator Controller",0,"",
-    "0.8.0",kVstVersionString,chopper::Controller::createInstance)
+    "0.9.0",kVstVersionString,chopper::Controller::createInstance)
 END_FACTORY

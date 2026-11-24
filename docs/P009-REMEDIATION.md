@@ -1,0 +1,20 @@
+# P009 consolidated audit remediation — candidate, not a release
+
+Baseline: main 33d81e8a2a66c95999207819efeecfe9de313ede; prior verified Glass V2 binary P008. Original independent reports and evidence remain unchanged. Windows x64 VST3. No shipping FULL/Demo exists. No new product features or GUI redesign.
+
+| Finding | Candidate change and intended regression | Status at source commit |
+|---|---|---|
+| C01 | independently validate tempo/meter; compare native PCM with valid and unchanged controls | NOT RUN |
+| C02 | explicit little-endian codec checks status and count; injected full-count errors on all fields of component, controller component recall and UI; compare saved state | NOT RUN |
+| C03 | gate both buffer access and silenceFlags on SDK bus activation; native nonnull sentinel and reactivation | NOT RUN |
+| C04 | shared UI preference notifications for attached editors; peer resize uses host acceptance, rejected geometry not represented as applied | NOT RUN: live recall/multi-view native tests still needed |
+| C05 | bypass stale private SDK aspect zoom cache on DPI notification; preserve current zoom authority | NOT RUN: real DPI transitions and rejection need verification |
+| C06 | use SDK EditController::setDirty on user preference changes, never recall/repaint | NOT RUN: callback and failure checks still needed |
+| C07 | reject double signs, native direct-entry and standalone parser tests | NOT RUN |
+| C08 | validate representability across allowed length range before clock/setup mutation; test rollback, normal unusual rates | NOT RUN |
+| C09 | existing per-instance clock retention across missing/invalid fields and setup remains intentional; no transport dependence | SPECIFICATION: lifecycle PCM test pending |
+| C10 | preserve local platform text while editing; require loaded 3x logo; preview label/density, cancel and host focus/adversarial tests pending | PARTIAL / NOT RUN |
+| C11 | original realtime deadline findings retained; no speculative DSP optimization; controlled native scheduling/load verification pending | INCONCLUSIVE |
+| C12 | package the exact pinned SDK and VSTGUI notices, check staged bytes | NOT RUN: exact archive/clean install and rights review pending |
+
+Native tests contain independent counterexamples; none are considered passed until actual execution. Existing test report gate now rejects missing positive evidence rather than accepting an empty file. The complete independent tester/test lab report, DAW recall/bypass/automation and real musical checks remain release blockers. No final ZIP or public release authorized.

@@ -512,6 +512,7 @@ void valueEntryContract(Native& n,GuiHandler& handler,HWND child){
     edit({103,822,387,L"65",0},VK_RETURN,false);
     edit({104,100,509,L"100",0},VK_RETURN,false);
     edit({107,404,509,L"25oops",0},VK_RETURN,false);
+    edit({105,252,509,L"+-25%",0},VK_RETURN,false);
     edit({110,860,509,L"5",0},VK_ESCAPE,false);
     std::cout<<"NATIVE_DOUBLE_CLICK_ALL_10_READOUTS_PASS\n";
 }
@@ -923,6 +924,93 @@ void guiContract(const VST3::Hosting::Module::Ptr& module,const std::filesystem:
     if(!previewOnly)std::cout<<"NATIVE_EDITOR_CONTRACT_PASS two attach cycles, 13 hit mappings, three segment edits, discrete wheel steps, resize roundtrip\n";
 }
 
+// P009 native counterexamples: use actual loaded processor/controller.
+class FaultStream final:public MemoryStream {
+public:
+    FaultStream(void* bytes,TSize size,int fail):MemoryStream(bytes,size),failAt(fail){}
+    explicit FaultStream(int fail):failAt(fail){}
+    tresult PLUGIN_API read(void* buffer,int32 count,int32* actual) override{
+        const auto result=MemoryStream::read(buffer,count,actual);
+        return call++==failAt?kResultFalse:result;
+    }
+    tresult PLUGIN_API write(void* buffer,int32 count,int32* actual) override{
+        const auto result=MemoryStream::write(buffer,count,actual);
+        return call++==failAt?kResultFalse:result;
+    }
+private:
+    int failAt,call=0;
+};
+void auditRegressions(const VST3::Hosting::Module::Ptr& module){
+    // Tempo changes while a malformed meter is advertised; compare an
+    // otherwise identical valid-flag render and an unchanged-tempo control.
+    const auto tempoRun=[&](bool update,bool badMeter){
+        Native n(module);n.start(48000,kSample64,2);setConstant(n,4,1,1,0,0);
+        n.render<double>(512);n.clock.tempo=update?240:120;
+        if(badMeter)n.clock.timeSigDenominator=0;
+        return n.render<double>(512);
+    };
+    const auto validTempo=tempoRun(true,false),oldTempo=tempoRun(false,false);
+    require(validTempo!=oldTempo&&tempoRun(true,true)==validTempo,"P009 independent tempo flag");
+    const auto meterRun=[&](bool update,bool badTempo){
+        Native n(module);n.start(48000,kSample64,2);
+        ParameterChanges p(14);point(p,103,0,0);point(p,107,0,0);
+        point(p,108,0,0);point(p,109,0,0);point(p,111,0,1);n.flush(p,kSample64);
+        n.clock.timeSigNumerator=update?3:4;
+        if(badTempo)n.clock.tempo=std::numeric_limits<double>::quiet_NaN();
+        std::vector<double> pcm;
+        for(int i=0;i<25088;i+=512){auto b=n.render<double>(512);pcm.insert(pcm.end(),b.begin(),b.end());}
+        return pcm;
+    };
+    const auto validMeter=meterRun(true,false),oldMeter=meterRun(false,false);
+    require(validMeter[18100]==1&&oldMeter[18100]==0&&meterRun(true,true)==validMeter,"P009 independent meter flag");
+    Native n(module);
+    auto baseline=n.save(),changed=baseline;const double newWidth=.25;
+    std::memcpy(changed.data()+8+7*8,&newWidth,8);
+    for(int i=0;i<16;++i){
+        FaultStream read(changed.data(),static_cast<TSize>(changed.size()),i);
+        require(n.component->setState(&read)!=kResultOk&&n.save()==baseline,"P009 component read error rollback");
+        FaultStream echo(changed.data(),static_cast<TSize>(changed.size()),i);
+        require(n.controller->setComponentState(&echo)!=kResultOk&&n.controller->getParamNormalized(107)==.5,"P009 controller read error rollback");
+        FaultStream write(i);
+        require(n.component->getState(&write)!=kResultOk,"P009 component write error");
+    }
+    MemoryStream ui;require(n.controller->getState(&ui)==kResultOk&&ui.getSize()==20,"P009 UI baseline");
+    std::vector<char> uiBytes(ui.getData(),ui.getData()+20),newUI=uiBytes;
+    const double zoom=1.25;std::memcpy(newUI.data()+8,&zoom,8);
+    for(int i=0;i<4;++i){
+        FaultStream read(newUI.data(),static_cast<TSize>(newUI.size()),i);
+        require(n.controller->setState(&read)!=kResultOk,"P009 UI read error");
+        MemoryStream after;require(n.controller->getState(&after)==kResultOk&&after.getSize()==20&&
+            std::memcmp(after.getData(),uiBytes.data(),20)==0,"P009 UI read rollback");
+        FaultStream write(i);require(n.controller->getState(&write)!=kResultOk,"P009 UI write error");
+    }
+    require(n.load(changed)&&n.save()==changed,"P009 positive state roundtrip");
+    n.start(48000,kSample64,2);
+    SignalBlock b(n,32);b.l.fill(.75);b.r.fill(-.25);
+    b.process(n);require(b.ol[0]==.75&&b.orr[0]==-.25,"P009 positive active buses");
+    const auto restart=[&](bool in,bool out){
+        n.stop();require(n.component->activateBus(kAudio,kInput,0,in)==kResultOk&&
+            n.component->activateBus(kAudio,kOutput,0,out)==kResultOk,"P009 configure active buses");
+        require(n.component->setActive(true)==kResultOk&&n.processor->setProcessing(true)==kResultOk,"P009 bus restart");
+        n.running=true;
+    };
+    restart(false,true);b.process(n);
+    require(b.o.silenceFlags==3&&std::all_of(b.ol.begin(),b.ol.begin()+32,[](double x){return x==0;})&&
+        std::all_of(b.orr.begin(),b.orr.begin()+32,[](double x){return x==0;}),"P009 inactive input sentinel");
+    restart(true,false);b.ol.fill(9);b.orr.fill(-9);b.o.silenceFlags=1;b.process(n);
+    require(b.o.silenceFlags==1&&std::all_of(b.ol.begin(),b.ol.end(),[](double x){return x==9;})&&
+        std::all_of(b.orr.begin(),b.orr.end(),[](double x){return x==-9;}),"P009 inactive output untouched");
+    restart(true,true);b.process(n);
+    require(b.ol[0]==.75&&b.orr[0]==-.25&&b.o.silenceFlags==0,"P009 bus reactivation");
+    n.stop();
+    ProcessSetup invalid{};invalid.processMode=kRealtime;invalid.symbolicSampleSize=kSample64;
+    invalid.maxSamplesPerBlock=512;invalid.sampleRate=std::numeric_limits<double>::max();
+    require(n.processor->setupProcessing(invalid)!=kResultOk,"P009 extreme sample rate rejected");
+    require(n.component->setActive(true)==kResultOk&&n.processor->setProcessing(true)==kResultOk,"P009 previous setup preserved");
+    n.running=true;b.process(n);require(b.ol[0]==.75&&b.orr[0]==-.25,"P009 post-rejection PCM");
+    std::cout<<"NATIVE_P009_CLOCK_STREAM_BUS_RATE_PASS\n";
+}
+
 int main(int argc,char** argv){
     require(argc==2||argc==3||argc==4,"bundle argument");
     struct ComScope{HRESULT hr=CoInitializeEx(nullptr,COINIT_APARTMENTTHREADED);~ComScope(){if(SUCCEEDED(hr))CoUninitialize();}} com;
@@ -933,6 +1021,7 @@ int main(int argc,char** argv){
     module->getFactory().setHostContext(&host);
     if(argc==4){if(std::string(argv[2])=="--editor"||std::string(argv[2])=="--preview"){guiContract(module,argv[3],std::string(argv[2])=="--preview");return 0;}require(std::string(argv[2])=="--programme","programme argument");programme(module,argv[3]);return 0;}
     if(argc==3){require(std::string(argv[2])=="--negative-spectrum","negative control argument");spectral(module,true);return 2;}
+    auditRegressions(module);
     waveformContracts(module);spectral(module,false);realtimeProbe(module);
     timing<float>(module,48000,2);timing<double>(module,48000,1);
     timing<float>(module,96000,1);timing<double>(module,192000,2);
