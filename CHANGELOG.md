@@ -34,3 +34,8 @@
 - P007 SDK audit: correct normalized discrete wheel increments and resource filename scale suffixes; verify all four actual loaded bitmap resolutions on attach; max editor scale and native wheel checks.
 - Primary linear left-drag independent of DAW knob mode; explicit 66-length bidirectional native drag oracle. Mouse wheel optional.
 - P007 resize gate found a stale reported rectangle; forward accepted aspect resize through SDK base and check native child geometry.
+
+## P008 / 0.8.0
+- P007 full Windows QA success, exact native screenshot inspected.
+- GUI-only compact percent readouts, preserve full parameter precision.
+- Native Ctrl+left reset oracle for all ten knobs, including host edit notifications.

@@ -233,8 +233,8 @@ public:
 BEGIN_FACTORY("125A Systems","","",Steinberg::PFactoryInfo::kNoFlags)
 DEF_CLASS2(INLINE_UID_FROM_FUID(chopper::processorUID),Steinberg::PClassInfo::kManyInstances,
     kVstAudioEffectClass,"125A Chopperator",Steinberg::Vst::kDistributable,"Fx|Modulation",
-    "0.7.0",kVstVersionString,chopper::Processor::createInstance)
+    "0.8.0",kVstVersionString,chopper::Processor::createInstance)
 DEF_CLASS2(INLINE_UID_FROM_FUID(chopper::controllerUID),Steinberg::PClassInfo::kManyInstances,
     kVstComponentControllerClass,"125A Chopperator Controller",0,"",
-    "0.7.0",kVstVersionString,chopper::Controller::createInstance)
+    "0.8.0",kVstVersionString,chopper::Controller::createInstance)
 END_FACTORY

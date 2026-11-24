@@ -49,21 +49,21 @@
 <view class="CTextLabel" origin="737, 376" size="170, 22" title="" font="Value" font-color="Text" text-alignment="center" transparent="true" mouse-enabled="false" control-tag="P103"/>
 <view class="CTextLabel" origin="28, 417" size="144, 19" title="MID POSITION" font="Label" font-color="Muted" text-alignment="center" transparent="true" mouse-enabled="false"/>
 <view class="CAnimKnob" origin="68, 436" size="64, 64" bitmap="knobS" control-tag="P104" wheel-inc-value="0.01" transparent="true"/>
-<view class="CTextLabel" origin="28, 500" size="144, 18" title="" font="Label" font-color="Text" text-alignment="center" transparent="true" mouse-enabled="false" control-tag="P104"/>
+<view class="CTextLabel" custom-view-name="PercentReadout" origin="28, 500" size="144, 18" title="" font="Label" font-color="Text" text-alignment="center" transparent="true" mouse-enabled="false" control-tag="P104"/>
 <view class="CTextLabel" origin="180, 417" size="144, 19" title="CURVE" font="Label" font-color="Muted" text-alignment="center" transparent="true" mouse-enabled="false"/>
 <view class="CAnimKnob" origin="220, 436" size="64, 64" bitmap="knobS" control-tag="P105" wheel-inc-value="0.01" transparent="true"/>
-<view class="CTextLabel" origin="180, 500" size="144, 18" title="" font="Label" font-color="Text" text-alignment="center" transparent="true" mouse-enabled="false" control-tag="P105"/>
+<view class="CTextLabel" custom-view-name="PercentReadout" origin="180, 500" size="144, 18" title="" font="Label" font-color="Text" text-alignment="center" transparent="true" mouse-enabled="false" control-tag="P105"/>
 <view class="CTextLabel" origin="332, 417" size="144, 19" title="WIDTH" font="Label" font-color="Muted" text-alignment="center" transparent="true" mouse-enabled="false"/>
 <view class="CAnimKnob" origin="372, 436" size="64, 64" bitmap="knobS" control-tag="P107" wheel-inc-value="0.01" transparent="true"/>
-<view class="CTextLabel" origin="332, 500" size="144, 18" title="" font="Label" font-color="Text" text-alignment="center" transparent="true" mouse-enabled="false" control-tag="P107"/>
+<view class="CTextLabel" custom-view-name="PercentReadout" origin="332, 500" size="144, 18" title="" font="Label" font-color="Text" text-alignment="center" transparent="true" mouse-enabled="false" control-tag="P107"/>
 <view class="CTextLabel" origin="484, 417" size="144, 19" title="ATTACK" font="Label" font-color="Muted" text-alignment="center" transparent="true" mouse-enabled="false"/>
 <view class="CAnimKnob" origin="524, 436" size="64, 64" bitmap="knobS" control-tag="P108" wheel-inc-value="0.01" transparent="true"/>
-<view class="CTextLabel" origin="484, 500" size="144, 18" title="" font="Label" font-color="Text" text-alignment="center" transparent="true" mouse-enabled="false" control-tag="P108"/>
+<view class="CTextLabel" custom-view-name="PercentReadout" origin="484, 500" size="144, 18" title="" font="Label" font-color="Text" text-alignment="center" transparent="true" mouse-enabled="false" control-tag="P108"/>
 <view class="CTextLabel" origin="636, 417" size="144, 19" title="RELEASE" font="Label" font-color="Muted" text-alignment="center" transparent="true" mouse-enabled="false"/>
 <view class="CAnimKnob" origin="676, 436" size="64, 64" bitmap="knobS" control-tag="P109" wheel-inc-value="0.01" transparent="true"/>
-<view class="CTextLabel" origin="636, 500" size="144, 18" title="" font="Label" font-color="Text" text-alignment="center" transparent="true" mouse-enabled="false" control-tag="P109"/>
+<view class="CTextLabel" custom-view-name="PercentReadout" origin="636, 500" size="144, 18" title="" font="Label" font-color="Text" text-alignment="center" transparent="true" mouse-enabled="false" control-tag="P109"/>
 <view class="CTextLabel" origin="788, 417" size="144, 19" title="MIX" font="Label" font-color="Muted" text-alignment="center" transparent="true" mouse-enabled="false"/>
 <view class="CAnimKnob" origin="828, 436" size="64, 64" bitmap="knobS" control-tag="P110" wheel-inc-value="0.01" transparent="true"/>
-<view class="CTextLabel" origin="788, 500" size="144, 18" title="" font="Label" font-color="Text" text-alignment="center" transparent="true" mouse-enabled="false" control-tag="P110"/>
+<view class="CTextLabel" custom-view-name="PercentReadout" origin="788, 500" size="144, 18" title="" font="Label" font-color="Text" text-alignment="center" transparent="true" mouse-enabled="false" control-tag="P110"/>
 <view class="CSegmentButton" origin="24, 528" size="912, 36" control-tag="P106" segment-names="RECT,SAW UP,SAW DOWN,TRIANGLE,SINE" selection-mode="Single" style="horizontal" font="Label" text-color="Text" text-color-highlighted="Amber" frame-color="Frame" frame-width="1" round-radius="6" gradient="Button" gradient-highlighted="Selected"/>
 </template></vstgui-ui-description>

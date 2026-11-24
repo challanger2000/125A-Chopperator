@@ -115,10 +115,10 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: 125A-Chopperator-P007-QA-evidence
+          name: 125A-Chopperator-P008-QA-evidence
           path: evidence
           if-no-files-found: warn
       - uses: actions/upload-artifact@v4
         with:
-          name: 125A-Chopperator-P007-Windows-x64-development
+          name: 125A-Chopperator-P008-Windows-x64-development
           path: artifact

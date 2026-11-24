@@ -5,10 +5,36 @@
 #include "vstgui/lib/cbitmap.h"
 #include "vstgui/lib/cfont.h"
 #include "vstgui/lib/controls/cknob.h"
+#include "vstgui/lib/controls/ctextlabel.h"
+#include <charconv>
+#include <string>
 #include "vstgui/uidescription/uiattributes.h"
 #include <array>
 
 namespace chopper {
+// Format only the on-panel readout. Preserve SDK parameter precision,
+// automation, state serialization and the DSP mapping without changes.
+class PercentLabel final:public VSTGUI::CTextLabel{
+public:
+    PercentLabel():CTextLabel(VSTGUI::CRect(0,0,1,1)){}
+    void setText(const VSTGUI::UTF8String& txt) override{
+        auto text=txt.getString();
+        for(auto& c:text)if(c==',')c='.';
+        double value=0;
+        const auto parsed=std::from_chars(text.data(),text.data()+text.size(),value);
+        if(parsed.ec!=std::errc{}||parsed.ptr!=text.data()+text.size()||!std::isfinite(value)){
+            CTextLabel::setText(txt);return;
+        }
+        if(std::abs(value)<.05)value=0;
+        char buffer[32]{};
+        const auto formatted=std::to_chars(buffer,buffer+sizeof(buffer),value,std::chars_format::fixed,1);
+        if(formatted.ec!=std::errc{}){CTextLabel::setText(txt);return;}
+        std::string display(buffer,formatted.ptr);
+        if(display.size()>=2&&display.substr(display.size()-2)==".0")display.resize(display.size()-2);
+        display+="%";
+        CTextLabel::setText(VSTGUI::UTF8String(display));
+    }
+};
 class Preview final:public VSTGUI::CView {
 public:
     Preview(const VSTGUI::CRect& r,Steinberg::Vst::EditController* c):CView(r),controller(c){
@@ -121,6 +147,7 @@ protected:
     }
     VSTGUI::CView* createView(const VSTGUI::UIAttributes& attrs,const VSTGUI::IUIDescription* desc) override{
         const auto* name=attrs.getAttributeValue("custom-view-name");
+        if(name&&*name=="PercentReadout")return new PercentLabel();
         if(name&&*name=="ChopperPreview")return new Preview(VSTGUI::CRect(24,72,936,210),getController());
         return AspectRatioVST3Editor::createView(attrs,desc);
     }

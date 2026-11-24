@@ -455,6 +455,28 @@ void guiContract(const VST3::Hosting::Module::Ptr& module,const std::filesystem:
         pumpGui(80);dragGui(child,404,468,15);
         require(std::abs(n.controller->getParamNormalized(107)-.6)<1e-5,"left drag continuous width");
         std::cout<<"NATIVE_LEFT_DRAG_ALL_66_LENGTHS_PASS\n";
+        // Reset via genuine Windows modifier state; WM_LBUTTONDOWN wParam alone
+        // is insufficient for frameworks that query GetKeyState(VK_CONTROL).
+        const std::array<std::array<double,4>,10> knobs{{{{138,314,100,1./6}},{{366,314,101,4./6}},{{594,314,102,1./6}},
+            {{822,314,103,3./65}},{{100,468,104,.5}},{{252,468,105,.5}},{{404,468,107,.5}},{{556,468,108,.02}},
+            {{708,468,109,.05}},{{860,468,110,1}}}};
+        for(const auto& knob:knobs){
+            const auto id=static_cast<ParamID>(knob[2]);const int x=static_cast<int>(knob[0]),y=static_cast<int>(knob[1]);
+            const double def=knob[3],other=def>.5?0.:1.;
+            require(n.controller->setParamNormalized(id,other)==kResultOk,"host nondefault before reset");pumpGui(40);
+            const int previous=handler->edits[id-100];
+            BYTE keys[256]{};require(GetKeyboardState(keys)!=0,"read keyboard state");
+            BYTE modified[256]{};std::copy(std::begin(keys),std::end(keys),std::begin(modified));
+            modified[VK_CONTROL]|=0x80;modified[VK_LCONTROL]|=0x80;
+            require(SetKeyboardState(modified)!=0,"set ctrl key state");
+            SendMessageW(child,WM_MOUSEMOVE,MK_CONTROL,MAKELPARAM(x,y));
+            SendMessageW(child,WM_LBUTTONDOWN,MK_LBUTTON|MK_CONTROL,MAKELPARAM(x,y));
+            SendMessageW(child,WM_LBUTTONUP,MK_CONTROL,MAKELPARAM(x,y));
+            require(SetKeyboardState(keys)!=0,"restore keyboard state");pumpGui(40);
+            require(std::abs(n.controller->getParamNormalized(id)-def)<1e-6,"native Ctrl+left default reset");
+            require(handler->edits[id-100]>previous&&std::abs(handler->last[id-100]-def)<1e-6,"reset host edit value");
+        }
+        std::cout<<"NATIVE_DEFAULT_RESET_ALL_10_KNOBS_PASS\n";
         // Actual editor resize negotiation; no claim of Studio Pro support.
         require(view->canResize()==kResultTrue,"editor resizable");
         ViewRect scaled{0,0,720,432};require(view->checkSizeConstraint(&scaled)==kResultOk,"resize constraint");
