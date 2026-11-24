@@ -51,3 +51,4 @@
 - Fix native corner QA to use real desktop mouse movement and button state; validate uninterrupted resize at multiple intermediate sizes.
 - Confirm full P008 green Windows workflow; extend native coverage for actual tooltip visibility and fresh attached restored editor geometry.
 - Replace unverified platform popup tooltips with scaled in-canvas contextual help; test visible composed pixels for two controls and disabled state.
+- Verify all P008 GUI requirements in native Windows; extend QA with actual GUI-to-host-to-processor PCM and fresh state recall across all thirteen controls.

@@ -367,8 +367,13 @@ class GuiHandler final:public FObject,public IComponentHandler{
 public:
     std::array<int,14> begins{},edits{},ends{};
     std::array<double,14> last{};
+    Native* relay=nullptr;
     tresult PLUGIN_API beginEdit(ParamID id) override{if(id<100||id>113)return kInvalidArgument;++begins[id-100];return kResultOk;}
-    tresult PLUGIN_API performEdit(ParamID id,ParamValue value) override{if(id<100||id>113||value<0||value>1)return kInvalidArgument;++edits[id-100];last[id-100]=value;return kResultOk;}
+    tresult PLUGIN_API performEdit(ParamID id,ParamValue value) override{if(id<100||id>113||value<0||value>1)return kInvalidArgument;++edits[id-100];last[id-100]=value;
+        // Test-host relay of the actual performEdit value into the real
+        // processor's parameter queue; never a direct DSP test shortcut.
+        if(relay){ParameterChanges p(14);point(p,id,0,value);relay->flush(p,kSample64);}
+        return kResultOk;}
     tresult PLUGIN_API endEdit(ParamID id) override{if(id<100||id>113)return kInvalidArgument;++ends[id-100];return kResultOk;}
     tresult PLUGIN_API restartComponent(int32) override{return kResultOk;}
     OBJ_METHODS(GuiHandler,FObject)
@@ -393,6 +398,84 @@ void wheelGui(HWND child,int x,int y){
     POINT pt{x,y};ClientToScreen(child,&pt);
     SendMessageW(child,WM_MOUSEWHEEL,MAKEWPARAM(0,WHEEL_DELTA),MAKELPARAM(pt.x,pt.y));
     pumpGui(100);
+}
+
+
+// Full native control chain: independent known gesture mapping, actual
+// performEdit -> host queue -> actual VST3 PCM, compared with a separate
+// explicit host-automation fixture and a fresh state-recalled instance.
+// Existing analytic DSP oracles remain independent of this parity gate.
+void guiAudioChain(const VST3::Hosting::Module::Ptr& module,Native& n,GuiHandler& handler,HWND child){
+    using Values=std::array<double,14>;
+    constexpr Values base{1./6,3./6,2./6,0,.5,.5,0,.5,.02,.05,.8,0,0,0};
+    constexpr int count=72000;
+    const auto write=[&](Native& dest,const Values& values){
+        ParameterChanges p(14);
+        for(std::size_t i=0;i<values.size();++i)point(p,static_cast<ParamID>(100+i),0,values[i]);
+        dest.flush(p,kSample64);
+    };
+    const auto activate=[](Native& dest){
+        ParameterChanges p(14);point(p,111,0,1);dest.flush(p,kSample64);
+    };
+    const auto capture=[&](Native& dest){
+        std::vector<double> pcm;pcm.reserve(count);
+        for(int offset=0;offset<count;){
+            int k=std::min(512,count-offset);auto block=dest.render<double>(k);
+            pcm.insert(pcm.end(),block.begin(),block.end());offset+=k;
+        }
+        return pcm;
+    };
+    const auto direct=[&](const Values& values,bool start){
+        Native reference(module);reference.start(48000,kSample64,2);write(reference,values);
+        // All fixtures are inactive until the single explicit rising edge.
+        reference.render<double>(64);
+        if(start)activate(reference);
+        return capture(reference);
+    };
+    const auto dry=direct(base,false),baseline=direct(base,true);
+    struct Gesture{ParamID id;int x,y,dy;double expected;};
+    constexpr Gesture actions[]{
+        {100,138,314,25,2./6},{101,366,314,25,4./6},{102,594,314,25,3./6},
+        {103,822,314,3,1./65},{104,100,468,30,.7},{105,252,468,30,.7},
+        {106,844,546,0,1.},{107,404,468,-30,.3},{108,556,468,30,.22},
+        {109,708,468,30,.25},{110,860,468,-30,.6},{111,650,34,0,1.},{112,920,34,0,1.}
+    };
+    for(const auto& g:actions){
+        n.start(48000,kSample64,2);write(n,base);n.render<double>(64);
+        for(std::size_t i=0;i<base.size();++i)
+            require(n.controller->setParamNormalized(static_cast<ParamID>(100+i),base[i])==kResultOk,"chain controller baseline");
+        pumpGui(80);
+        const auto before=handler.edits;const auto starts=handler.begins;const auto stops=handler.ends;
+        handler.relay=&n;
+        if(g.dy)dragGui(child,g.x,g.y,g.dy);else clickGui(child,g.x,g.y);
+        handler.relay=nullptr;
+        const auto index=g.id-100;
+        require(handler.edits[index]>before[index]&&handler.begins[index]>starts[index]&&
+                handler.ends[index]-stops[index]==handler.begins[index]-starts[index],"chain actual balanced host gesture");
+        for(std::size_t i=0;i<base.size();++i)if(i!=index)require(handler.edits[i]==before[i],"chain no cross-parameter edit");
+        const double actualValue=handler.last[index];
+        require(std::abs(actualValue-g.expected)<1e-6&&std::abs(n.controller->getParamNormalized(g.id)-actualValue)<1e-10,"chain expected gesture value");
+        Values expected=base;expected[index]=actualValue;
+        if(g.id!=111){n.render<double>(64);activate(n);}
+        const auto pcm=capture(n);
+        // For ACTIVE the direct reference receives its independent rising
+        // edge only after warmup; for others the changed value is explicit.
+        auto directSettings=expected;directSettings[11]=0;
+        const auto reference=direct(directSettings,true);
+        require(pcm==reference,"GUI host callback reaches exact expected processor PCM");
+        const auto& unchanged=g.id==111?dry:baseline;
+        double maximum=0;for(std::size_t i=0;i<pcm.size();++i)maximum=std::max(maximum,std::abs(pcm[i]-unchanged[i]));
+        require(maximum>1e-3,"chain negative control rejects unchanged sound");
+        auto saved=n.save();n.stop();
+        Native fresh(module);require(fresh.load(saved),"chain fresh audio state restore");
+        MemoryStream stream(saved.data(),static_cast<TSize>(saved.size()));
+        require(fresh.controller->setComponentState(&stream)==kResultOk&&
+            std::abs(fresh.controller->getParamNormalized(g.id)-actualValue)<1e-10,"chain fresh controller value restore");
+        fresh.start(48000,kSample64,2);
+        require(capture(fresh)==pcm,"chain fresh restored exact PCM");
+        std::cout<<"NATIVE_GUI_AUDIO_CHAIN_PASS id="<<g.id<<" changed_peak="<<maximum<<"\n";
+    }
+    std::cout<<"NATIVE_GUI_AUDIO_ALL_13_PASS\n";
 }
 
 using PreviewSettings=std::array<double,7>;
@@ -608,6 +691,7 @@ void guiContract(const VST3::Hosting::Module::Ptr& module,const std::filesystem:
             {{100,468,104}},{{252,468,105}},{{120,546,106}},{{404,468,107}},{{556,468,108}},{{708,468,109}},
             {{860,468,110}},{{610,34,111}},{{820,34,112}}}};
         for(const auto& hit:hits){ParamID id=0;require(finder->findParameter(hit[0],hit[1],id)==kResultTrue&&id==static_cast<ParamID>(hit[2]),"native parameter hit mapping");}
+        if(cycle==0)guiAudioChain(module,n,*handler,child);
         require(n.controller->setParamNormalized(111,0)==kResultOk,"host active off");
         require(n.controller->setParamNormalized(106,0)==kResultOk,"host rect");
         require(n.controller->setParamNormalized(112,0)==kResultOk,"host one shot");pumpGui(80);
