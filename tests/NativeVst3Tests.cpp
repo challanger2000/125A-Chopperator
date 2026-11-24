@@ -253,6 +253,7 @@ void realtimeProbe(const VST3::Hosting::Module::Ptr& module){
     point(p,100,0,0);point(p,101,0,1);point(p,102,0,0);
     point(p,104,0,.01);point(p,105,0,1);n.flush(p,kSample64);
     std::array<double,384> micros{};
+    double inputEnergy=0,outputEnergy=0,differenceEnergy=0;
     const auto interval=std::chrono::duration_cast<Clock::duration>(std::chrono::duration<double>(128./48000));
     auto deadline=Clock::now();double sum=0;int over=0;
     for(std::size_t i=0;i<micros.size();++i){
@@ -265,14 +266,25 @@ void realtimeProbe(const VST3::Hosting::Module::Ptr& module){
         require(status==kResultOk,"paced native automation");
         const double us=std::chrono::duration<double,std::micro>(end-begin).count();
         micros[i]=us;sum+=us;over+=us>128./48000*1e6;
-        for(int k=0;k<128;++k)require(std::isfinite(b.ol[k])&&std::abs(b.ol[k])<=std::abs(b.l[k])+1e-14,"paced bounded output");
+        for(int k=0;k<128;++k){
+            require(std::isfinite(b.ol[k])&&std::abs(b.ol[k])<=std::abs(b.l[k])+1e-14&&
+                    b.orr[k]==-.5*b.ol[k],"paced bounded stereo output");
+            inputEnergy+=b.l[k]*b.l[k];outputEnergy+=b.ol[k]*b.ol[k];
+            const double delta=b.ol[k]-b.l[k];differenceEnergy+=delta*delta;
+        }
         deadline+=interval;std::this_thread::sleep_until(deadline);
     }
     std::sort(micros.begin(),micros.end());
     std::cout<<"PACED_NATIVE_MEASUREMENT callbacks="<<micros.size()<<" mean_us="<<sum/micros.size()
         <<" p95_us="<<micros[364]<<" p99_us="<<micros[380]<<" max_us="<<micros.back()
         <<" deadline_us="<<128./48000*1e6<<" callback_overruns="<<over<<"\n";
-    // Cloud scheduler and physical ASIO are different. Observation only.
+    require(inputEnergy>0&&outputEnergy/inputEnergy>.001&&differenceEnergy/inputEnergy>.001,
+        "paced output neither silent nor unmodified");
+    std::cout<<"PACED_NATIVE_SIGNAL_PASS wet_energy_ratio="<<outputEnergy/inputEnergy
+        <<" change_energy_ratio="<<differenceEnergy/inputEnergy<<"\n";
+    // A measured overrun blocks this gate; attribution to scheduler or
+    // processor requires separate evidence. Cloud runner is not ASIO.
+    require(over==0,"paced native callback deadline exceeded");
 }
 
 
@@ -1112,6 +1124,39 @@ void auditRegressions(const VST3::Hosting::Module::Ptr& module){
     std::cout<<"NATIVE_P009_CLOCK_STREAM_BUS_RATE_PASS\n";
 }
 
+// Port the archived independent Codex malformed-prefix and lifecycle probes
+// to the actual compiled module. Contract: one instance retains the last
+// valid clock across missing context, stop/start and re-setup; a new
+// instance starts at 120 BPM 4/4. Phase resets on reactivation only.
+void clockLifecycleAndQueue(const VST3::Hosting::Module::Ptr& module){
+    Native n(module);n.start(48000,kSample64,2);
+    setConstant(n,2,1,1,0,0);n.clock.tempo=240;n.clock.timeSigNumerator=3;
+    auto first=n.render<double>(512);
+    require(std::abs(first[511]-511.*4/48000)<1e-9,"clock analytic 240 BPM");
+    require(n.processor->setProcessing(false)==kResultOk&&n.processor->setProcessing(true)==kResultOk,"clock transport pause");
+    auto continued=n.render<double>(512,nullptr,false);
+    require(std::abs(continued[511]-1023.*4/48000)<1e-9,"clock phase survives processing pause");
+    n.stop();n.start(48000,kSample64,2);
+    auto retained=n.render<double>(512,nullptr,false);
+    require(retained==first,"clock survives reactivation without context, phase restarts");
+    auto updated=n.render<double>(512);
+    require(std::abs(updated[511]-(512.*4+511.*2)/48000)<1e-9,"valid new clock changes phase rate");
+    Native fresh(module);fresh.start(48000,kSample64,2);setConstant(fresh,2,1,1,0,0);
+    auto defaultClock=fresh.render<double>(512,nullptr,false);
+    require(std::abs(defaultClock[511]-511.*2/48000)<1e-9&&defaultClock!=retained,"fresh instance default clock");
+    // Reproduce exact valid-prefix policy from Codex extra.cpp.
+    Native q(module);q.start(48000,kSample64,2);
+    ParameterChanges points(14);
+    point(points,110,3,.75);point(points,110,7,std::numeric_limits<double>::quiet_NaN());
+    SignalBlock b(q,16);b.l.fill(1);b.r.fill(-.5);b.data.inputParameterChanges=&points;
+    require(q.processor->process(b.data)!=kResultOk,"malformed later queue reports error");
+    auto state=q.save();double mix=0;std::memcpy(&mix,state.data()+8+10*8,8);
+    require(mix==.75&&b.ol[3]==1,"malformed later queue retains valid prefix");
+    b.data.inputParameterChanges=nullptr;b.process(q);
+    require(b.ol[0]==1&&b.orr[0]==-.5,"subsequent valid process recovers");
+    std::cout<<"NATIVE_P009_CLOCK_LIFECYCLE_MALFORMED_QUEUE_PASS\n";
+}
+
 int main(int argc,char** argv){
     require(argc==2||argc==3||argc==4,"bundle argument");
     struct ComScope{HRESULT hr=CoInitializeEx(nullptr,COINIT_APARTMENTTHREADED);~ComScope(){if(SUCCEEDED(hr))CoUninitialize();}} com;
@@ -1122,7 +1167,7 @@ int main(int argc,char** argv){
     module->getFactory().setHostContext(&host);
     if(argc==4){if(std::string(argv[2])=="--editor"||std::string(argv[2])=="--preview"){guiContract(module,argv[3],std::string(argv[2])=="--preview");if(std::string(argv[2])=="--editor")liveUIAudit(module);return 0;}require(std::string(argv[2])=="--programme","programme argument");programme(module,argv[3]);return 0;}
     if(argc==3){require(std::string(argv[2])=="--negative-spectrum","negative control argument");spectral(module,true);return 2;}
-    auditRegressions(module);
+    auditRegressions(module);clockLifecycleAndQueue(module);
     waveformContracts(module);spectral(module,false);realtimeProbe(module);
     timing<float>(module,48000,2);timing<double>(module,48000,1);
     timing<float>(module,96000,1);timing<double>(module,192000,2);

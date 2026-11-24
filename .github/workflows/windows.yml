@@ -123,6 +123,34 @@ jobs:
           if (@(Select-String -Path $qa[0].FullName -Pattern '\[PASS\]').Count -lt 57) { throw "Tester report missing required positive evidence" }
           Get-FileHash (Join-Path $plugin 'Contents/x86_64-win/125A Chopperator.vst3') -Algorithm SHA256 | Format-List
           Write-Host "INDEPENDENT_TESTER_EXECUTION_PASS"
+      - name: Independent pinned 125A Test Lab technical baseline
+        shell: pwsh
+        run: |
+          $labCommit = '7213fe1f81f4036f74431cb5b2d7dbd09b73ee5c'
+          git init test-lab
+          if ($LASTEXITCODE -ne 0) { throw "Lab init failed" }
+          git -C test-lab fetch --depth=1 https://github.com/challanger2000/125A-Plugin-Test-Lab.git $labCommit
+          if ($LASTEXITCODE -ne 0) { throw "Lab fetch failed" }
+          git -C test-lab checkout --detach FETCH_HEAD
+          if ($LASTEXITCODE -ne 0 -or (git -C test-lab rev-parse HEAD) -ne $labCommit) { throw "Lab source identity mismatch" }
+          $sdk = (Resolve-Path build/_deps/vst3sdk-src).Path
+          cmake -S test-lab -B lab-build -G "Visual Studio 17 2022" -A x64 "-DFETCHCONTENT_SOURCE_DIR_VST3SDK=$sdk"
+          if ($LASTEXITCODE -ne 0) { throw "Lab configuration failed" }
+          cmake --build lab-build --config Release --parallel --target TestLabHost TestLabGUI TestLabStateStress
+          if ($LASTEXITCODE -ne 0) { throw "Lab compilation failed" }
+          function Find-Host($name) {
+            $matches = @(Get-ChildItem lab-build -Recurse -File -Filter $name | Where-Object { $_.FullName -match 'Release' })
+            if ($matches.Count -ne 1) { throw "Expected exactly one Lab host: $name" }
+            return $matches[0].FullName
+          }
+          $plugin = (Resolve-Path 'artifact/125A Chopperator.vst3').Path
+          $gui = Find-Host '125A_Test_Lab_GUI.exe'
+          $audio = Find-Host '125A_Test_Lab_Host.exe'
+          $stress = Find-Host '125A_Test_Lab_State_Stress.exe'
+          python test-lab/tests/run_universal_qa.py --plugin "$plugin" --gui-host "$gui" --audio-host "$audio" --stress-host "$stress" --run-technical-baseline --timeout 110 --out evidence/test-lab
+          if ($LASTEXITCODE -ne 0) { throw "Independent Lab technical baseline failed" }
+          $report = Get-Content evidence/test-lab/UNIVERSAL-QA-RESULT.json -Raw | ConvertFrom-Json
+          if ($report.status -ne 'TECHNICAL_BASELINE_PASS' -or $report.release_approved -ne $false) { throw "Lab evidence incomplete" }
       - name: Generate static GUI draft with original 125A assets
         if: always() && steps.ffmpeg.outcome == 'success'
         shell: pwsh
