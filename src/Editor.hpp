@@ -6,7 +6,8 @@
 #include "vstgui/lib/cfont.h"
 #include "vstgui/lib/cframe.h"
 #include "vstgui/lib/events.h"
-#include "base/source/fobject.h"
+#include "vstgui/lib/cvstguitimer.h"
+#include <vector>
 #include <functional>
 #include "vstgui/lib/controls/cknob.h"
 #include "vstgui/lib/controls/ctextlabel.h"
@@ -16,7 +17,15 @@
 #include <array>
 
 namespace chopper {
-struct EditorPreferences { double zoom=1.; bool help=false; };
+struct EditorPreferences {
+    double zoom=1.; bool help=false;
+    // GUI-thread-only registry. An editor can be created, removed or reopened
+    // independently of the processing component. No audio-thread accesses.
+    struct Watch { const void* owner; std::function<void()> update; };
+    std::vector<Watch> watches;
+    void notify(){for(auto& w:watches)w.update();}
+    void remove(const void* owner){std::erase_if(watches,[owner](const auto& w){return w.owner==owner;});}
+};
 // Format only the on-panel readout. Preserve SDK parameter precision,
 // automation, state serialization and the DSP mapping without changes.
 class PercentLabel final:public VSTGUI::CTextLabel{
@@ -25,6 +34,10 @@ public:
     void setText(const VSTGUI::UTF8String& txt) override{
         auto text=txt.getString();
         for(auto& c:text)if(c==',')c='.';
+        const auto first=text.find_first_not_of(" \t");
+        if(first!=std::string::npos)text.erase(0,first);
+        const auto last=text.find_last_not_of(" %\t");
+        if(last!=std::string::npos)text.resize(last+1);
         double value=0;
         const auto parsed=std::from_chars(text.data(),text.data()+text.size(),value);
         if(parsed.ec!=std::errc{}||parsed.ptr!=text.data()+text.size()||!std::isfinite(value)){
@@ -42,29 +55,27 @@ public:
 };
 class Preview final:public VSTGUI::CView {
     static constexpr std::array<Param,7> ids{Param::start,Param::mid,Param::end,Param::length,Param::position,Param::curve,Param::width};
-    class Observer final:public Steinberg::FObject {
-    public:
-        explicit Observer(Preview& p):preview(p){}
-        void PLUGIN_API update(Steinberg::FUnknown*,Steinberg::int32 message) override{
-            if(message==Steinberg::IDependent::kChanged)preview.refresh();
-        }
-    private:
-        Preview& preview;
-    };
 public:
-    Preview(const VSTGUI::CRect& r,Steinberg::Vst::EditController* c):CView(r),controller(c),observer(*this){
-        setMouseEnabled(false);refresh();
+    Preview(const VSTGUI::CRect& r,Steinberg::Vst::EditController* c,EditorPreferences& p):CView(r),controller(c),prefs(p){
+        setMouseEnabled(false);setTransparency(false);refresh(false);
     }
     bool attached(VSTGUI::CView* parent) override{
         if(!CView::attached(parent))return false;
-        for(auto id:ids)if(auto* p=controller->getParameterObject(static_cast<Steinberg::Vst::ParamID>(id)))p->addDependent(&observer);
-        refresh();return true;
+        prefs.watches.push_back({this,[this]{pending=true;}});
+        // Use a dedicated GUI timer rather than the SDK global idle updater.
+        // A dirty bit coalesces rapid drags/automation to one render per frame.
+        timer=VSTGUI::owned(new VSTGUI::CVSTGUITimer([this](VSTGUI::CVSTGUITimer*){
+            if(refresh(false)||pending){pending=false;repaint();}
+        },33,true));
+        refresh(false);return true;
     }
     bool removed(VSTGUI::CView* parent) override{
-        if(isAttached())for(auto id:ids)if(auto* p=controller->getParameterObject(static_cast<Steinberg::Vst::ParamID>(id)))p->removeDependent(&observer);
+        if(timer){timer->stop();timer=nullptr;}
+        prefs.remove(this);
         return CView::removed(parent);
     }
     void draw(VSTGUI::CDrawContext* c) override {
+        refresh(false);
         using namespace VSTGUI;
         const auto r=getViewSize();
         // Owner's Unbenannt.svg: viewBox 340 x 110. This is a timing
@@ -91,14 +102,19 @@ public:
         setDirty(false);
     }
 private:
-    void refresh(){
+    void repaint(){
+        // Invalidate the whole logical panel via its parent, including the
+        // preview area. Avoid partial-composition clipping/stale regions.
+        if(auto* parent=getParentView())parent->invalid();
+    }
+    bool refresh(bool redraw){
         Parameters p;
         std::array<double,ids.size()> now{};
         for(std::size_t i=0;i<ids.size();++i){
             now[i]=controller->getParamNormalized(static_cast<Steinberg::Vst::ParamID>(ids[i]));
             p.set(ids[i],now[i]);
         }
-        if(initialized&&now==previous)return;
+        if(initialized&&now==previous)return false;
         previous=now;initialized=true;
         const auto s=p.settings();position=s.position;
         // In 4/4 one bar contains one whole note. Invert the same
@@ -124,10 +140,12 @@ private:
                 ++count;
             }
         }
-        invalid();
+        if(redraw)repaint();return true;
     }
     Steinberg::Vst::EditController* controller;
-    Observer observer;
+    EditorPreferences& prefs;
+    VSTGUI::SharedPointer<VSTGUI::CVSTGUITimer> timer;
+    bool pending=false;
     std::array<double,7> previous{};
     std::array<double,4096> starts{},ends{};
     std::size_t count=0;
@@ -276,7 +294,7 @@ protected:
             if(checkSizeConstraint(&r)==Steinberg::kResultTrue)requestResize(VSTGUI::CPoint(r.getWidth(),r.getHeight()));
         });
         if(name&&*name=="PercentReadout")return new PercentLabel();
-        if(name&&*name=="ChopperPreview")return new Preview(VSTGUI::CRect(24,72,936,210),getController());
+        if(name&&*name=="ChopperPreview")return new Preview(VSTGUI::CRect(24,72,936,210),getController(),preferences);
         return AspectRatioVST3Editor::createView(attrs,desc);
     }
 private:

@@ -417,6 +417,12 @@ bool previewExpected(const PreviewSettings& p,double x){
 }
 std::vector<bool> previewRow(HWND child,int y){
     constexpr int first=52,last=908;
+    // Synchronize the compositor without forcing a product redraw.
+    if(HMODULE dwm=LoadLibraryW(L"dwmapi.dll")){
+        using Flush=HRESULT(WINAPI*)();
+        if(auto flush=reinterpret_cast<Flush>(GetProcAddress(dwm,"DwmFlush")))flush();
+        FreeLibrary(dwm);
+    }
     HDC screen=GetDC(child);require(screen!=nullptr,"preview screen DC");
     HDC dc=CreateCompatibleDC(screen);require(dc!=nullptr,"preview memory DC");
     BITMAPINFO bi{};bi.bmiHeader.biSize=sizeof(BITMAPINFOHEADER);bi.bmiHeader.biWidth=960;bi.bmiHeader.biHeight=-1;
@@ -472,8 +478,17 @@ void previewContract(Native& n,HWND child){
         auto changed=baseline;changed[i]=expected[i];
         require(std::abs(n.controller->getParamNormalized(ids[i])-changed[i])<1e-6,"preview drag parameter");
         const auto actual=previewRow(child,125);
-        assertPreview(actual,changed);
         int delta=0;for(std::size_t x=0;x<base.size();++x)delta+=actual[x]!=base[x];
+        std::cout<<"PREVIEW_PIXEL_DIAGNOSTIC id="<<ids[i]<<" delta="<<delta<<"\n";
+        if(delta<=12){
+            // Diagnostic only: forced repaint may distinguish capture/paint
+            // delivery from the phase algorithm. Do not accept it as a pass.
+            RedrawWindow(child,nullptr,nullptr,RDW_INVALIDATE|RDW_UPDATENOW|RDW_ALLCHILDREN);pumpGui(120);
+            const auto forced=previewRow(child,125);int forcedDelta=0;
+            for(std::size_t x=0;x<base.size();++x)forcedDelta+=forced[x]!=base[x];
+            std::cout<<"PREVIEW_FORCED_PAINT_DIAGNOSTIC delta="<<forcedDelta<<"\n";
+        }
+        assertPreview(actual,changed);
         require(delta>12,"preview changed rather than static reference");
         std::cout<<"NATIVE_PREVIEW_REACTIVE_PASS id="<<ids[i]<<" changed_pixels="<<delta<<"\n";
     }

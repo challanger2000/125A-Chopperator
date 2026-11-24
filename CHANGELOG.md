@@ -45,3 +45,4 @@
 - Fix stale timing display detected by native pixel oracle; parameter-dependent refresh.
 - Add switchable contextual ? help and actual bottom-right proportional resize grip.
 - Persist per-instance GUI zoom and ? help in separate VST3 controller state, independent of audio presets.
+- Correct live preview refresh via explicit controller notifications, dedicated GUI timer and coalesced invalidation; native pixel diagnostic preserves independent acceptance oracle.

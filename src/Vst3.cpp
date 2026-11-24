@@ -220,7 +220,9 @@ public:
     }
     tresult PLUGIN_API setParamNormalized(ParamID id,ParamValue value) override{
         Parameters p;if(!p.set(static_cast<Param>(id),value))return kResultFalse;
-        return EditController::setParamNormalized(id,p.get(static_cast<Param>(id)));
+        const auto result=EditController::setParamNormalized(id,p.get(static_cast<Param>(id)));
+        if(result==kResultOk)ui.notify();
+        return result;
     }
     // Separate controller state: zoom/help are never audio parameters.
     // Component/preset recall leaves UI preferences unchanged.
@@ -235,13 +237,13 @@ public:
         uint32 tag=0,version=0,help=0;double zoom=0;
         if(!s.readInt32u(tag)||!s.readInt32u(version)||!s.readDouble(zoom)||!s.readInt32u(help)||
             tag!=0x31554943u||version!=1||!std::isfinite(zoom)||zoom<.75||zoom>1.5||help>1)return kResultFalse;
-        ui={zoom,help!=0};return kResultOk;
+        ui.zoom=zoom;ui.help=help!=0;return kResultOk;
     }
     tresult PLUGIN_API setComponentState(IBStream* stream) override{
         Parameters p;if(!decode(stream,p))return kResultFalse;
         for(std::size_t i=0;i<parameterCount;++i)EditController::setParamNormalized(
             static_cast<ParamID>(100+i),p.get(static_cast<Param>(100+i)));
-        return kResultOk;
+        ui.notify();return kResultOk;
     }
 private:
     EditorPreferences ui{};
