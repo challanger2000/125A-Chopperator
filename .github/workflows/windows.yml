@@ -53,11 +53,7 @@ jobs:
           New-Item -ItemType Directory -Force -Path evidence | Out-Null
           Copy-Item fixtures/manifest.json evidence
           Get-ChildItem fixtures -Filter '*_*.f64le' | ForEach-Object {
-            if ($_.BaseName -match '_(rect|sine)
-        with:
-          name: 125A-Chopperator-P006-Windows-x64-development
-          path: artifact
-) {
+            if ($_.BaseName -match '_(rect|sine)$') {
               ffmpeg -v error -nostdin -y -f f64le -ar 48000 -ac 2 -i $_.FullName -c:a pcm_s24le ("evidence/" + $_.BaseName + ".wav")
               if ($LASTEXITCODE -ne 0) { throw "Evidence WAV conversion failed" }
             }
@@ -69,10 +65,12 @@ jobs:
           Invoke-WebRequest -Uri $url -OutFile tester.exe
           if ((Get-FileHash tester.exe -Algorithm SHA256).Hash.ToLowerInvariant() -ne 'b0f386422d107ac6fa8b15c3e1e86113f52b013e277fc94b16d28b929438bfea') { throw "Tester binary hash mismatch" }
           $plugin = Resolve-Path 'artifact/125A Chopperator.vst3'
+          New-Item -ItemType Directory -Force -Path tester-reports | Out-Null
+          ${env:125A_PLUGIN_TESTER_REPORT_DIR} = (Resolve-Path tester-reports).Path
           $process = Start-Process -FilePath (Resolve-Path tester.exe).Path -ArgumentList @('--portable-test', ('"' + $plugin.Path + '"')) -PassThru
           if (-not $process.WaitForExit(180000)) { $process.Kill(); throw "Tester timeout" }
           $process.Refresh()
-          $reports = @(Get-ChildItem artifact -Recurse -File -Filter '*125A*txt')
+          $reports = @(Get-ChildItem tester-reports -Recurse -File -Filter '*125A*txt')
           foreach ($report in $reports) { Copy-Item $report.FullName evidence; Get-Content $report.FullName }
           $qa = @($reports | Where-Object { $_.Name -like '*_125A_QA_Report.txt' })
           if ($process.ExitCode -ne 0 -or $qa.Count -ne 1) { throw "Tester failed or missing report: exit $($process.ExitCode)" }
