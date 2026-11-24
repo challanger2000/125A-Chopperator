@@ -54,3 +54,6 @@ Exact commit b6e9fccce05cd5bcf82b590451bc84226cd4e8e3: 4/4 CTests, 47/47 validat
 
 ## Verified P008 full workflow 45425299923
 Exact 3b5877be6f0ee0dc35aed518ff25981cced33e5d: 4/4 CTests, 47/47 validator, independent tester 57/0/0, all-seven composed-pixel timing display, actual corner drag, visible in-canvas help on/off, fresh actual restored 1200x720 child and scaled hit mapping, UI state rollback, six programme PCM oracles PASS. New native GUI audio chain parity test for all 13 controls and fresh state recall added; execution pending. Studio Pro/listening/full audit remain open.
+
+## P008 candidate 45427106965 (473bbbca236e3cb8d8a51e4c7dbcbf8b8136f8a4)
+Complete workflow PASS; all thirteen actual native GUI-to-processor control paths, balanced host edits, no cross-parameter edits, expected gesture values, explicit automation PCM parity, meaningful change against unchanged baseline, and fresh controller/component recall PCM PASS. Existing independent DSP/GUI/validator/tester/programme gates PASS. Exact downloaded candidate ZIP SHA256 25a2ad07ef67b6c2376f803569e6392a81f2d2a4f06241c684a72a98b432c14a verified, ZIP CRC and complete bundle checked. Owner practical Studio Pro acceptance now next; no public FINAL release claim. Full audit and untested DPI/host-specific outcomes remain open.
