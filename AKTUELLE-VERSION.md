@@ -1,3 +1,13 @@
+# P009 / 0.9.0 — TECHNICAL GO, practical acceptance pending
+
+Independent technical GO confirmed by audit commit e5489a818e782040207e6a54d436c282ef4debe7, for exact product source 8859e8be9a3aa12a9f5439780d369e273a820e79 and successful run 45512723609. Both remaining M01/M03 follow-up findings closed; M02 previously independently passed. See [final follow-up audit](docs/P009-M01-M03-FOLLOWUP-CODEX-AUDIT.md) and [native verification](docs/P009-M01-M03-FOLLOWUP-VERIFICATION.md).
+
+Verified candidate artifact: https://github.com/challanger2000/125A-Chopperator/actions/runs/45512723609/artifacts/14977116333
+Inner ZIP SHA-256 from CI: 907fe655872438de98620995b37a6d47fd75cacb93ee292e5a53b9c763b583c5.
+Module SHA-256 from CI: 887400da3fd45451efee7bfed188d38ae409be7933ce32776fea1790533224a0.
+
+Technical development closed for this candidate. Practical Studio Pro acceptance (including audible behavior, automation, project recall, ASIO and actual editor operation) remains NOT RUN; clean-machine acceptance also NOT RUN. Independent auditor did not directly access raw Windows logs or inner artifact bytes; this limitation is preserved. No release/publication before owner acceptance. No product changes and no additional CI run requested.
+
 # P009 — second targeted M01/M03 follow-up verification
 
 Exact product source: 8859e8be9a3aa12a9f5439780d369e273a820e79
